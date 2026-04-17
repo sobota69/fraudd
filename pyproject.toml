@@ -1,0 +1,14 @@
+[project]
+name = "fraud-detection"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "imbalanced-learn>=0.14.1",
+    "numpy>=2.4.4",
+    "pandas>=3.0.2",
+    "plotly>=6.7.0",
+    "scikit-learn>=1.8.0",
+    "streamlit>=1.56.0",
+    "xgboost>=3.2.0",
+]
