@@ -6,12 +6,25 @@ from src.rules_runner import RulesRunner
 from src.transaction.transaction import Transaction
 
 
+from dataclasses import dataclass, field
+from typing import List as _List
+
+
+@dataclass
+class WorkflowResult:
+    """Results returned by WorkflowRunner.run_process."""
+    transactions: list
+    assessments: list
+    rule_results: list          # list[list[RuleResult]], one inner list per tx
+    elapsed: float              # seconds
+
+
 class WorkflowRunner:
     def __init__(self):
         self.provider = Neo4jGraphProvider()
         self.risk_calculator = RiskCalculator()
 
-    def run_process(self, df: pd.DataFrame):
+    def run_process(self, df: pd.DataFrame) -> "WorkflowResult":
         import time as _time
         from collections import defaultdict
 
@@ -19,6 +32,7 @@ class WorkflowRunner:
 
         rules_runner = RulesRunner(rules=[RuleClass() for RuleClass in ALL_RULES])
         risk_assessments: list[RiskAssessment] = []
+        all_rule_results: list[list] = []  # per-transaction rule results
         total_start = _time.perf_counter()
 
         # Pre-build all Transaction objects and index by customer_id
@@ -35,8 +49,11 @@ class WorkflowRunner:
         for i, tx in enumerate(transactions):
             history = customer_history.get(tx.customer_id, [])
             rule_results = rules_runner.run_detection(tx, history=history)
+            all_rule_results.append(rule_results)
             assessment = risk_calculator.calculate_risk(rule_results, tx)
             risk_assessments.append(assessment)
+
+        elapsed = _time.perf_counter() - total_start
 
         # Save all results to CSV at once
         output_file = "risk_assessments.csv"
@@ -51,11 +68,15 @@ class WorkflowRunner:
             for a in risk_assessments
         ]
 
-        print(f"\n✅ All {len(df)} transactions processed before saving in {_time.perf_counter() - total_start:.2f}s")
-
         pd.DataFrame(rows).to_csv(output_file, index=False)
+        print(f"\n✅ All {len(df)} transactions processed in {elapsed:.2f}s")
 
-        print(f"\n✅ All {len(df)} transactions processed in {_time.perf_counter() - total_start:.2f}s")
+        return WorkflowResult(
+            transactions=transactions,
+            assessments=risk_assessments,
+            rule_results=all_rule_results,
+            elapsed=elapsed,
+        )
         
         
 
