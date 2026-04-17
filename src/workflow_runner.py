@@ -1,18 +1,21 @@
 import pandas as pd
-from graph.provider import provider
-from risk import risk_calculator
-from risk.risk_calculator import RiskAssessment
-from rules import ALL_RULES
-from rules_runner import RulesRunner
-from transaction.transaction import Transaction
+from src.graph.provider import Neo4jGraphProvider
+from src.risk.risk_calculator import RiskCalculator, RiskAssessment
+from src.rules import ALL_RULES
+from src.rules_runner import RulesRunner
+from src.transaction.transaction import Transaction
 
 
 class WorkflowRunner:
     def __init__(self):
-        ...
+        self.provider = Neo4jGraphProvider()
+        self.risk_calculator = RiskCalculator()
 
     def run_process(self, df: pd.DataFrame):
         import time as _time
+        
+        provider = self.provider
+        risk_calculator = self.risk_calculator
         
         rules_runner = RulesRunner(rules=[RuleClass() for RuleClass in ALL_RULES])
         risk_assessments: list[RiskAssessment] = []
