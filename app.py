@@ -9,6 +9,8 @@ import plotly.graph_objects as go
 from src.data_loader import generate_synthetic_data, preprocess, analyse_dataframe
 from src.model import train_model
 from rules import ALL_RULES
+from transaction.transaction import Transaction
+from src.rules_runner import RulesRunner
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Fraud Detection Dashboard", page_icon="🔍", layout="wide")
@@ -29,9 +31,18 @@ apply_smote = st.sidebar.checkbox("Apply SMOTE oversampling", value=True)
 def get_data(n: int, ratio: float, _file=None):
     if _file is not None:
         return pd.read_csv(_file)
+
     return generate_synthetic_data(n_samples=n, fraud_ratio=ratio)
 
 if uploaded_file is not None:
+    data_file = pd.read_csv(uploaded_file)
+    transactions: list[Transaction] = []
+    for record in data_file.to_dict(orient="records"):
+        transactions.append(Transaction(**record))
+    
+    rules_runner = RulesRunner(rules=[RuleClass() for RuleClass in ALL_RULES])
+    result = rules_runner.run_detection(transactions)
+
     df = get_data(0, 0, uploaded_file)
 else:
     df = get_data(n_samples, fraud_ratio, None)
@@ -62,12 +73,12 @@ if uploaded_file is not None:
     # Numeric statistics
     if not analysis["numeric_stats"].empty:
         with st.expander("Numeric column statistics", expanded=True):
-            st.dataframe(analysis["numeric_stats"].style.format(precision=2), use_container_width=True)
+            st.dataframe(analysis["numeric_stats"].style.format(precision=2), width='stretch')
 
     # Categorical statistics
     if not analysis["categorical_stats"].empty:
         with st.expander("Categorical column statistics", expanded=True):
-            st.dataframe(analysis["categorical_stats"], use_container_width=True)
+            st.dataframe(analysis["categorical_stats"], width='stretch')
 
     # Correlation heatmap
     if not analysis["correlations"].empty:
@@ -77,7 +88,7 @@ if uploaded_file is not None:
                 title="Feature Correlations", color_continuous_scale="RdBu_r",
                 zmin=-1, zmax=1,
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # Missing-value bar chart
     missing_series = df.isnull().sum()
@@ -87,7 +98,7 @@ if uploaded_file is not None:
             fig = px.bar(x=missing_series.index, y=missing_series.values,
                          labels={"x": "Column", "y": "Missing count"},
                          title="Missing Values by Column")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # ── Smart visualisations for uploaded data ────────────────────────────────
     st.header("📈 Data Visualisations")
@@ -117,11 +128,11 @@ if uploaded_file is not None:
             fig = px.histogram(df, x="amount", nbins=60, title="Transaction Amount Distribution",
                                color_discrete_sequence=["#636EFA"])
             fig.update_layout(xaxis_title="Amount", yaxis_title="Count")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         with c2:
             fig = px.box(df, y="amount", title="Amount Box Plot",
                          color_discrete_sequence=["#636EFA"])
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # -- Time-series charts ----------------------------------------------------
     if ts_col and "_parsed_ts" in df.columns:
@@ -134,13 +145,13 @@ if uploaded_file is not None:
             fig = px.line(daily, x="_date", y="count", title="Transactions per Day",
                           markers=True, color_discrete_sequence=["#636EFA"])
             fig.update_layout(xaxis_title="Date", yaxis_title="Transaction Count")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         with c2:
             hourly = df.groupby("_hour").size().reset_index(name="count")
             fig = px.bar(hourly, x="_hour", y="count", title="Transactions by Hour of Day",
                          color_discrete_sequence=["#636EFA"])
             fig.update_layout(xaxis_title="Hour", yaxis_title="Count")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # -- Channel distribution --------------------------------------------------
     if "channel" in df.columns:
@@ -150,13 +161,13 @@ if uploaded_file is not None:
             ch_counts.columns = ["channel", "count"]
             fig = px.pie(ch_counts, names="channel", values="count",
                          title="Transaction Channel Distribution", hole=0.4)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         with c2:
             if "amount" in df.columns:
                 fig = px.box(df, x="channel", y="amount", color="channel",
                              title="Amount by Channel")
                 fig.update_layout(showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
     # -- Beneficiary name mismatch analysis ------------------------------------
     if "entered_beneficiary_name" in df.columns and "official_beneficiary_account_name" in df.columns:
@@ -180,7 +191,7 @@ if uploaded_file is not None:
                         ["entered_beneficiary_name",
                          "official_beneficiary_account_name", "amount"]
                     ].head(100),
-                    use_container_width=True,
+                    width='stretch',
                 )
 
     # -- New beneficiary flag --------------------------------------------------
@@ -192,7 +203,7 @@ if uploaded_file is not None:
             fig = px.pie(new_ben, names="is_new_beneficiary", values="count",
                          title="New vs Existing Beneficiary", hole=0.4,
                          color_discrete_sequence=["#636EFA", "#EF553B"])
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         with c2:
             if "amount" in df.columns:
                 fig = px.box(df, x="is_new_beneficiary", y="amount",
@@ -200,7 +211,7 @@ if uploaded_file is not None:
                              title="Amount by Beneficiary Status",
                              color_discrete_sequence=["#636EFA", "#EF553B"])
                 fig.update_layout(showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
     # -- Customer balance analysis ---------------------------------------------
     if "customer_account_balance" in df.columns:
@@ -209,13 +220,13 @@ if uploaded_file is not None:
             fig = px.histogram(df, x="customer_account_balance", nbins=50,
                                title="Account Balance Distribution",
                                color_discrete_sequence=["#00CC96"])
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         with c2:
             if "amount" in df.columns:
                 fig = px.scatter(df, x="customer_account_balance", y="amount",
                                  title="Balance vs Transaction Amount",
                                  opacity=0.4, color_discrete_sequence=["#636EFA"])
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
     # -- Top customers ---------------------------------------------------------
     if "customer_id" in df.columns:
@@ -227,7 +238,7 @@ if uploaded_file is not None:
                      title="Top 15 Customers", color="transactions",
                      color_continuous_scale="Viridis")
         fig.update_layout(xaxis_title="Customer ID", yaxis_title="# Transactions")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     # -- Generic numeric distributions for remaining columns -------------------
     shown_numeric = {"amount", "customer_account_balance"}
@@ -243,7 +254,7 @@ if uploaded_file is not None:
                             fig = px.histogram(df, x=remaining_numeric[idx], nbins=40,
                                                title=f"{remaining_numeric[idx]} Distribution",
                                                color_discrete_sequence=["#AB63FA"])
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width='stretch')
 
     # Clean up temp columns
     df.drop(columns=[c for c in df.columns if c.startswith("_")], inplace=True, errors="ignore")
@@ -278,7 +289,7 @@ if is_synthetic_schema:
             color_discrete_map={0: "#636EFA", 1: "#EF553B"},
         )
         fig.update_layout(xaxis_title="Amount ($)", yaxis_title="Count")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with eda2:
         hourly = df.groupby(["hour", "is_fraud"]).size().reset_index(name="count")
@@ -286,19 +297,19 @@ if is_synthetic_schema:
             hourly, x="hour", y="count", color="is_fraud", barmode="group",
             title="Transactions by Hour", color_discrete_map={0: "#636EFA", 1: "#EF553B"},
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     eda3, eda4 = st.columns(2)
     with eda3:
         fig = px.box(df, x="is_fraud", y="distance_from_home", color="is_fraud",
                      title="Distance from Home", color_discrete_map={0: "#636EFA", 1: "#EF553B"})
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with eda4:
         cat_fraud = df.groupby("category")["is_fraud"].mean().reset_index()
         fig = px.bar(cat_fraud, x="category", y="is_fraud", title="Fraud Rate by Category",
                      labels={"is_fraud": "Fraud Rate"}, color="is_fraud", color_continuous_scale="Reds")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
 # ── Model training (only for synthetic schema) ───────────────────────────────
 if is_synthetic_schema:

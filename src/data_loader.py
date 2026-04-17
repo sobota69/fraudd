@@ -3,12 +3,31 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
+#from .transaction import Transaction
+from transaction import Transaction
 
 
-def load_data(file_path: str | Path) -> pd.DataFrame:
-    """Load transaction data from a CSV file."""
-    df = pd.read_csv(file_path)
-    return df
+
+def load_data(file_path: str | Path) -> list[Transaction]:
+    """Load transaction data from a CSV file into a list of Transaction objects."""
+    csv_path = Path(file_path)
+
+    try:
+        df = pd.read_csv(csv_path)
+        transactions: list[Transaction] = []
+        for record in df.to_dict(orient="records"):
+            transactions.append(Transaction(**record))
+        if transactions:
+            print("Top 10 transactions:")
+            for t in transactions[:10]:
+                print(t)
+        else:
+            print("No transactions loaded.")
+        return transactions
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to read CSV at {csv_path}: {e}") from e
+
 
 
 def generate_synthetic_data(n_samples: int = 10_000, fraud_ratio: float = 0.02, seed: int = 42) -> pd.DataFrame:
