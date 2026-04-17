@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 
 from src.data_loader import generate_synthetic_data, preprocess, analyse_dataframe
 from src.model import train_model
+from rules import ALL_RULES
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Fraud Detection Dashboard", page_icon="🔍", layout="wide")
@@ -348,6 +349,53 @@ if is_synthetic_schema:
                              mode="lines", name=f"PR (AUC={results['pr_auc']:.4f})"))
     fig.update_layout(xaxis_title="Recall", yaxis_title="Precision", height=400)
     st.plotly_chart(fig, use_container_width=True)
+
+# ── FRAML Rules Engine ────────────────────────────────────────────────────────
+if uploaded_file is not None:
+    st.header("🛡️ FRAML Rules Evaluation")
+
+    rule_instances = [RuleClass() for RuleClass in ALL_RULES]
+
+    # Let user pick which rules to run
+    rule_options = {r.rule_id + " – " + r.rule_name: r for r in rule_instances}
+    selected_labels = st.multiselect(
+        "Select rules to evaluate",
+        options=list(rule_options.keys()),
+        default=list(rule_options.keys()),
+    )
+    selected_rules = [rule_options[label] for label in selected_labels]
+
+    if st.button("▶ Run selected rules") and selected_rules:
+        results_rows = []
+        progress = st.progress(0)
+        for idx, (_, tx) in enumerate(df.iterrows()):
+            customer_history = df[df["customer_id"] == tx.get("customer_id")] if "customer_id" in df.columns else None
+            for rule in selected_rules:
+                result = rule.evaluate(tx, history=customer_history)
+                if result.triggered:
+                    results_rows.append({
+                        "transaction_id": tx.get("transaction_id", idx),
+                        "rule_id": result.rule_id,
+                        "rule_name": result.rule_name,
+                        "severity": result.severity.name if result.severity else "",
+                        "weight": result.weight,
+                        "details": str(result.details),
+                    })
+            progress.progress((idx + 1) / len(df))
+        progress.empty()
+
+        if results_rows:
+            alerts_df = pd.DataFrame(results_rows)
+            st.subheader(f"🚨 {len(alerts_df)} alerts triggered")
+            st.dataframe(alerts_df, use_container_width=True)
+
+            # Summary by rule
+            summary = alerts_df.groupby(["rule_id", "rule_name"]).size().reset_index(name="count")
+            fig = px.bar(summary, x="rule_id", y="count", color="rule_name",
+                         title="Alerts by Rule")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.success("✅ No rules triggered – all transactions passed.")
 
 # ── Footer ───────────────────────────────────────────────────────────────────
 st.markdown("---")
