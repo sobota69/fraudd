@@ -37,15 +37,13 @@ def get_data(n: int, ratio: float, _file=None):
     return generate_synthetic_data(n_samples=n, fraud_ratio=ratio)
 
 if uploaded_file is not None:
-    data_file = pd.read_csv(uploaded_file)
+    df = pd.read_csv(uploaded_file)
     transactions: list[Transaction] = []
-    for record in data_file.to_dict(orient="records"):
+    for record in df.to_dict(orient="records"):
         transactions.append(Transaction(**record))
     
     rules_runner = RulesRunner(rules=[RuleClass() for RuleClass in ALL_RULES])
     result = rules_runner.run_detection(transactions)
-
-    df = get_data(0, 0, uploaded_file)
 else:
     df = get_data(n_samples, fraud_ratio, None)
 
