@@ -1,4 +1,5 @@
 
+import time as _time
 from typing import List
 from src.rules.base_rule import RuleResult
 from src.rules.base_rule import BaseRule
@@ -18,7 +19,11 @@ class RulesRunner:
         for transaction in transactions:
             tx_results: List[RuleResult] = []
             for rule in self.rules:
+                t0 = _time.perf_counter()
                 result = rule.evaluate(transaction, history=transactions)
+                elapsed = _time.perf_counter() - t0
+                print(f"  ⏱  {rule.rule_id:6s} ({rule.rule_name}): {elapsed:.4f}s"
+                      f"  {'⚠ TRIGGERED' if result.triggered else ''}")
                 tx_results.append(result)
             all_results.append(tx_results)
 

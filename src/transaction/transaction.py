@@ -18,6 +18,7 @@ class Transaction:
     entered_beneficiary_name: str
     official_beneficiary_account_name: str
     customer_account_balance: float
+    beneficiary_country: Optional[str] = None
 
     def __post_init__(self):
         if isinstance(self.transaction_timestamp, str):

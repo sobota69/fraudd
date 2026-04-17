@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional, Sequence
 
 from neo4j import GraphDatabase, RoutingControl
-from model import ClientActivityWindow, CountryStat, Transaction, TransactionSummary
+from .model import ClientActivityWindow, CountryStat, Transaction, TransactionSummary
 
 
 RuleProperty = Literal[
