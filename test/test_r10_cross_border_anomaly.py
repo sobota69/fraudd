@@ -104,11 +104,10 @@ class TestR10CrossBorderAnomaly:
         assert result.triggered is False
 
     def test_different_customer_history_ignored(self):
-        """History from another customer shouldn't count as 'seen'."""
+        """No same-customer history (pre-filtered upstream) → FR is new → triggers."""
         tx = _make_tx(customer_id=100, amount=20000.0, beneficiary_account="FR0000000000000000000000")
-        history = _history_with_countries(["FR"], customer_id=999)
-        result = self.rule.evaluate(tx, history=history)
-        assert result.triggered is True  # FR not seen for customer 100
+        result = self.rule.evaluate(tx, history=[])
+        assert result.triggered is True
 
     # ── trigger cases ─────────────────────────────────────────────────
 

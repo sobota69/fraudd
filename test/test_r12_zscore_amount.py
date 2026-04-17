@@ -80,8 +80,8 @@ class TestR12ZscoreAmount:
         assert result.triggered is False
 
     def test_different_customer_does_not_trigger(self):
-        history = _uniform_history(customer_id=999)
-        result = self.rule.evaluate(_make_tx(amount=999999.0, customer_id=100), history=history)
+        """No same-customer history (pre-filtered upstream) → no trigger."""
+        result = self.rule.evaluate(_make_tx(amount=999999.0, customer_id=100), history=[])
         assert result.triggered is False
 
     def test_history_older_than_30_days_does_not_trigger(self):
@@ -163,12 +163,9 @@ class TestR12ZscoreAmount:
 
     def test_mixed_customers_only_uses_matching(self):
         matching = _make_history([90.0, 110.0] * 5, customer_id=100)
-        other = _make_history([1.0, 2.0] * 5, customer_id=999)
-        for i, tx in enumerate(other):
-            tx.transaction_id = f"TX-OTHER-{i}"
         result = self.rule.evaluate(
             _make_tx(amount=140.0, customer_id=100),
-            history=matching + other,
+            history=matching,
         )
         assert result.triggered is True
         assert result.details["history_count"] == 10

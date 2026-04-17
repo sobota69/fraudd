@@ -54,8 +54,7 @@ class R6HighAmountSpike(BaseRule):
         cutoff = transaction.transaction_timestamp - timedelta(days=_LOOKBACK_DAYS)
         customer_txs = [
             tx for tx in history
-            if tx.customer_id == transaction.customer_id
-            and tx.transaction_timestamp >= cutoff
+            if tx.transaction_timestamp >= cutoff
             and tx.transaction_id != transaction.transaction_id
         ]
 

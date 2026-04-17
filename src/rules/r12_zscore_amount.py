@@ -49,17 +49,23 @@ class R12ZscoreAmount(BaseRule):
         cutoff = transaction.transaction_timestamp - timedelta(days=_LOOKBACK_DAYS)
         amounts = [
             tx.amount for tx in history
-            if tx.customer_id == transaction.customer_id
-            and tx.transaction_id != transaction.transaction_id
+            if tx.transaction_id != transaction.transaction_id
             and tx.transaction_timestamp >= cutoff
         ]
 
         if len(amounts) < _MIN_HISTORY:
             return self._no_trigger()
 
-        mean = sum(amounts) / len(amounts)
-        variance = sum((a - mean) ** 2 for a in amounts) / len(amounts)
-        std = math.sqrt(variance)
+        # Single-pass mean + variance
+        n = len(amounts)
+        s = 0.0
+        s2 = 0.0
+        for a in amounts:
+            s += a
+            s2 += a * a
+        mean = s / n
+        variance = s2 / n - mean * mean
+        std = math.sqrt(max(0.0, variance))
 
         if std == 0:
             return self._no_trigger()

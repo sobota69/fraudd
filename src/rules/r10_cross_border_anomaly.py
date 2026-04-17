@@ -59,10 +59,7 @@ class R10CrossBorderAnomaly(BaseRule):
 
         seen_countries: set[str] = set()
         for tx in history:
-            if (
-                tx.customer_id == transaction.customer_id
-                and tx.transaction_id != transaction.transaction_id
-            ):
+            if tx.transaction_id != transaction.transaction_id:
                 c = _country_from_iban(tx.beneficiary_account)
                 if c:
                     seen_countries.add(c)

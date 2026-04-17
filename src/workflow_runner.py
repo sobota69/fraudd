@@ -13,54 +13,47 @@ class WorkflowRunner:
 
     def run_process(self, df: pd.DataFrame):
         import time as _time
-        
-        provider = self.provider
+        from collections import defaultdict
+
         risk_calculator = self.risk_calculator
-        
+
         rules_runner = RulesRunner(rules=[RuleClass() for RuleClass in ALL_RULES])
         risk_assessments: list[RiskAssessment] = []
         total_start = _time.perf_counter()
 
-        for i, record in enumerate(df.to_dict(orient="records")):
-            tx_start = _time.perf_counter()
+        # Pre-build all Transaction objects and index by customer_id
+        transactions: list[Transaction] = []
+        customer_history: dict[int, list[Transaction]] = defaultdict(list)
 
-            # Create transaction object
-            t0 = _time.perf_counter()
+        t0 = _time.perf_counter()
+        for record in df.to_dict(orient="records"):
             tx = Transaction(**record)
-            print(f"[TX {i}] Transaction object created in {_time.perf_counter() - t0:.4f}s")
+            transactions.append(tx)
+            customer_history[tx.customer_id].append(tx)
+        print(f"Built {len(transactions)} transactions + index in {_time.perf_counter() - t0:.2f}s")
 
-            # Add to provider
-            t0 = _time.perf_counter()
-            provider.save_transaction(tx)
-            elapsed_db = _time.perf_counter() - t0
-            if i == 0:
-                print(f"[TX {i}] 🗄️  First save_transaction took {elapsed_db:.4f}s")
-
-            # Check rules (per-rule timing is printed inside RulesRunner)
-            t0 = _time.perf_counter()
-            rule_results = rules_runner.run_detection([tx])
-            print(f"[TX {i}] Rules engine total: {_time.perf_counter() - t0:.4f}s")
-
-            # Calculate risk
-            t0 = _time.perf_counter()
-            assessment = risk_calculator.calculate_risk(rule_results[0], tx)
-            print(f"[TX {i}] Risk calculation: {_time.perf_counter() - t0:.4f}s")
+        for i, tx in enumerate(transactions):
+            history = customer_history.get(tx.customer_id, [])
+            rule_results = rules_runner.run_detection(tx, history=history)
+            assessment = risk_calculator.calculate_risk(rule_results, tx)
             risk_assessments.append(assessment)
 
-            # Save it to output CSV (append mode)
-            t0 = _time.perf_counter()
-            output_file = "risk_assessments.csv"
-            assessment_data = {
-                "transaction_id": assessment.transaction_id,
-                "triggered_rules": assessment.triggered_rules,
-                "is_fraud_transaction": assessment.is_fraud_transaction,
-                "risk_score": assessment.risk_score,
-                "risk_category": assessment.risk_category,
+        # Save all results to CSV at once
+        output_file = "risk_assessments.csv"
+        rows = [
+            {
+                "transaction_id": a.transaction_id,
+                "triggered_rules": a.triggered_rules,
+                "is_fraud_transaction": a.is_fraud_transaction,
+                "risk_score": a.risk_score,
+                "risk_category": a.risk_category,
             }
-            pd.DataFrame([assessment_data]).to_csv(output_file, mode='a', header=not pd.io.common.file_exists(output_file), index=False)
-            print(f"[TX {i}] CSV write: {_time.perf_counter() - t0:.4f}s")
+            for a in risk_assessments
+        ]
 
-            print(f"[TX {i}] ── Total: {_time.perf_counter() - tx_start:.4f}s")
+        print(f"\n✅ All {len(df)} transactions processed before saving in {_time.perf_counter() - total_start:.2f}s")
+
+        pd.DataFrame(rows).to_csv(output_file, index=False)
 
         print(f"\n✅ All {len(df)} transactions processed in {_time.perf_counter() - total_start:.2f}s")
         

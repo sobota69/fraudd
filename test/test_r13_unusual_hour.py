@@ -160,8 +160,8 @@ class TestR13UnusualHour:
         assert result.triggered is False
 
     def test_different_customer_not_counted(self):
-        history = _history_at_hours([10] * 15, customer_id=999)
-        result = self.rule.evaluate(_make_tx(customer_id=100), history=history)
+        """No same-customer history (pre-filtered upstream) → no trigger."""
+        result = self.rule.evaluate(_make_tx(customer_id=100), history=[])
         assert result.triggered is False
 
     # ── no-trigger: hour inside window ────────────────────────────────
@@ -224,16 +224,13 @@ class TestR13UnusualHour:
         assert result.triggered is True
 
     def test_trigger_with_mixed_customers(self):
-        """Only matching customer history is used."""
+        """Only same-customer history is passed (pre-filtered upstream)."""
         matching = _history_at_hours([10] * 12, customer_id=100)
-        other = _history_at_hours([3] * 20, customer_id=999)  # hour 3 for other
-        for i, tx in enumerate(other):
-            tx.transaction_id = f"TX-OTHER-{i}"
         tx = _make_tx(
             customer_id=100,
             timestamp=datetime(2025, 12, 19, 3, 0, 0, tzinfo=timezone.utc),
         )
-        result = self.rule.evaluate(tx, history=matching + other)
+        result = self.rule.evaluate(tx, history=matching)
         assert result.triggered is True  # hour 3 is unusual for customer 100
 
     # ── edge cases ────────────────────────────────────────────────────

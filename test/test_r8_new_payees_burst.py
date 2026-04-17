@@ -71,8 +71,8 @@ class TestR8NewPayeesBurst:
         assert result.triggered is False
 
     def test_different_customer_does_not_trigger(self):
-        history = _make_new_payee_history(count=5, customer_id=999)
-        result = self.rule.evaluate(_make_tx(customer_id=100), history=history)
+        """No same-customer history (pre-filtered upstream) → no trigger."""
+        result = self.rule.evaluate(_make_tx(customer_id=100), history=[])
         assert result.triggered is False
 
     def test_existing_beneficiaries_do_not_trigger(self):
@@ -143,14 +143,11 @@ class TestR8NewPayeesBurst:
         assert result.details["new_payee_count_in_window"] == 4
 
     def test_only_same_customer_counted(self):
-        """2 new for customer 100, 5 new for customer 999 → only 3 total with current."""
+        """Only same-customer history is passed (pre-filtered upstream)."""
         matching = _make_new_payee_history(count=2, customer_id=100)
-        other = _make_new_payee_history(count=5, customer_id=999)
-        for i, tx in enumerate(other):
-            tx.transaction_id = f"TX-OTHER-{i}"
         result = self.rule.evaluate(
             _make_tx(customer_id=100, is_new_beneficiary=True),
-            history=matching + other,
+            history=matching,
         )
         assert result.triggered is True
         assert result.details["new_payee_count_in_window"] == 3

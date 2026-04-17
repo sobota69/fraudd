@@ -65,9 +65,8 @@ class TestR7HighFrequencyTransfers:
         assert result.triggered is False
 
     def test_different_customer_does_not_trigger(self):
-        """5 recent tx exist but for a different customer → no trigger."""
-        history = _make_recent_history(count=5, customer_id=999)
-        result = self.rule.evaluate(_make_tx(customer_id=100), history=history)
+        """No same-customer history (pre-filtered upstream) → no trigger."""
+        result = self.rule.evaluate(_make_tx(customer_id=100), history=[])
         assert result.triggered is False
 
     def test_three_tx_in_window_does_not_trigger(self):
@@ -114,14 +113,9 @@ class TestR7HighFrequencyTransfers:
         assert result.details["transaction_count_in_window"] == 10
 
     def test_trigger_only_counts_same_customer(self):
-        """Mix of customers – only matching ones should count."""
+        """Only same-customer history is passed (pre-filtered upstream)."""
         matching = _make_recent_history(count=4, customer_id=100)
-        other = _make_recent_history(count=10, customer_id=999)
-        # rename ids to avoid collision
-        for i, tx in enumerate(other):
-            tx.transaction_id = f"TX-OTHER-{i}"
-        history = matching + other
-        result = self.rule.evaluate(_make_tx(customer_id=100), history=history)
+        result = self.rule.evaluate(_make_tx(customer_id=100), history=matching)
         assert result.triggered is True
         assert result.details["transaction_count_in_window"] == 5  # 4 + current
 

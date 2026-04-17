@@ -65,11 +65,8 @@ class R21RapidAccountEmptying(BaseRule):
                 and tx.transaction_timestamp < window_start
             ]
             if pre_window_txs:
-                # Pick the most recent one before the window
-                pre_window_txs.sort(
-                    key=lambda tx: tx.transaction_timestamp, reverse=True
-                )
-                balance_before = pre_window_txs[0].customer_account_balance
+                latest = max(pre_window_txs, key=lambda tx: tx.transaction_timestamp)
+                balance_before = latest.customer_account_balance
 
         # Fallback: infer from current transaction
         if balance_before is None:

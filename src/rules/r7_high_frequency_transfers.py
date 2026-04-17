@@ -49,8 +49,7 @@ class R7HighFrequencyTransfers(BaseRule):
 
         recent_txs = [
             tx for tx in history
-            if tx.customer_id == transaction.customer_id
-            and tx.transaction_id != transaction.transaction_id
+            if tx.transaction_id != transaction.transaction_id
             and window_start <= tx.transaction_timestamp <= transaction.transaction_timestamp
         ]
 

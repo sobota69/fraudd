@@ -58,10 +58,7 @@ def find_smallest_90pct_window(hour_counts: Counter) -> Tuple[int, int, int]:
 def hour_in_window(hour: int, start: int, size: int) -> bool:
     """Check if *hour* falls inside the contiguous window [start, start+size)
     on a 24-hour clock."""
-    for i in range(size):
-        if (start + i) % 24 == hour:
-            return True
-    return False
+    return (hour - start) % 24 < size
 
 
 class R13UnusualHour(BaseRule):
@@ -79,11 +76,10 @@ class R13UnusualHour(BaseRule):
         if not history:
             return self._no_trigger()
 
-        # Filter to same customer, exclude current tx
+        # History is pre-filtered to same customer
         customer_txs = [
             tx for tx in history
-            if tx.customer_id == transaction.customer_id
-            and tx.transaction_id != transaction.transaction_id
+            if tx.transaction_id != transaction.transaction_id
         ]
 
         if len(customer_txs) < _MIN_HISTORY:

@@ -74,9 +74,9 @@ class TestR6HighAmountSpike:
         assert result.triggered is False
 
     def test_no_matching_customer_does_not_trigger(self):
+        """No same-customer history (pre-filtered upstream) → no trigger."""
         tx = _make_tx(amount=999999.0, customer_id=100)
-        history = _make_history(customer_id=999)  # different customer
-        result = self.rule.evaluate(tx, history=history)
+        result = self.rule.evaluate(tx, history=[])
         assert result.triggered is False
 
     def test_history_older_than_30_days_does_not_trigger(self):
@@ -182,12 +182,9 @@ class TestR6HighAmountSpike:
         assert result.details["history_count"] == 5
 
     def test_mixed_customers_only_uses_matching(self):
-        """Only transactions from the same customer_id are considered."""
+        """Only same-customer history is passed (pre-filtered upstream)."""
         tx = _make_tx(amount=500.0, customer_id=100)
-        history = [
-            *_make_history(count=5, avg_amount=100.0, customer_id=100),
-            *_make_history(count=5, avg_amount=10.0, customer_id=999),
-        ]
+        history = _make_history(count=5, avg_amount=100.0, customer_id=100)
         result = self.rule.evaluate(tx, history=history)
         assert result.triggered is True
         assert result.details["history_count"] == 5
