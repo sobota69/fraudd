@@ -39,8 +39,8 @@ class BaseRule(ABC):
     @abstractmethod
     def evaluate(
         self,
-        transaction: pd.Series,
-        history: Optional[pd.DataFrame] = None,
+        transaction: Transaction,
+        history: Optional[List[Transaction]] = None,
     ) -> RuleResult:
         """Evaluate the rule against a single transaction.
 

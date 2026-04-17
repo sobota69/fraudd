@@ -9,13 +9,14 @@ class RulesRunner:
         self.rules = rules
 
     def run_detection(self, transactions: List[Transaction]) -> List[RuleResult]:
-        """Run all rules against provided transactions"""
+        """Run all rules against each transaction, using the full list as history."""
         results: List[RuleResult] = []
-       
 
-        for rule in self.rules:
-            result = rule.evaluate(transactions)
-            results.append(result)
+        for transaction in transactions:
+            for rule in self.rules:
+                result = rule.evaluate(transaction, history=transactions)
+                if result.triggered:
+                    results.append(result)
 
         return results
 

@@ -10,6 +10,8 @@ from src.data_loader import generate_synthetic_data, preprocess, analyse_datafra
 from src.model import train_model
 from rules import ALL_RULES
 from transaction.transaction import Transaction
+from datetime import datetime
+from transaction.transaction import Transaction
 from src.rules_runner import RulesRunner
 
 # ── Page config ──────────────────────────────────────────────────────────────
@@ -377,22 +379,53 @@ if uploaded_file is not None:
     selected_rules = [rule_options[label] for label in selected_labels]
 
     if st.button("▶ Run selected rules") and selected_rules:
+        # Convert DataFrame rows to Transaction objects once
+        def _row_to_transaction(row):
+            ts = row.get("transaction_timestamp", "")
+            if isinstance(ts, str):
+                try:
+                    ts = datetime.fromisoformat(ts)
+                except (ValueError, TypeError):
+                    ts = datetime.now()
+            return Transaction(
+                transaction_id=str(row.get("transaction_id", "")),
+                transaction_timestamp=ts,
+                customer_id=int(row.get("customer_id", 0)),
+                customer_account=str(row.get("customer_account", "")),
+                channel=str(row.get("channel", "")),
+                device_id=str(row.get("device_id", "")),
+                amount=float(row.get("amount", 0)),
+                currency=str(row.get("currency", "")),
+                is_new_beneficiary=bool(row.get("is_new_beneficiary", False)),
+                beneficiary_account=str(row.get("beneficiary_account", "")),
+                entered_beneficiary_name=str(row.get("entered_beneficiary_name", "")),
+                official_beneficiary_account_name=str(row.get("official_beneficiary_account_name", "")),
+                customer_account_balance=float(row.get("customer_account_balance", 0)),
+            )
+
+        all_transactions = [_row_to_transaction(row) for _, row in df.iterrows()]
+        # Build customer history lookup
+        from collections import defaultdict
+        customer_history_map = defaultdict(list)
+        for t in all_transactions:
+            customer_history_map[t.customer_id].append(t)
+
         results_rows = []
         progress = st.progress(0)
-        for idx, (_, tx) in enumerate(df.iterrows()):
-            customer_history = df[df["customer_id"] == tx.get("customer_id")] if "customer_id" in df.columns else None
+        for idx, tx in enumerate(all_transactions):
+            customer_history = customer_history_map.get(tx.customer_id, [])
             for rule in selected_rules:
                 result = rule.evaluate(tx, history=customer_history)
                 if result.triggered:
                     results_rows.append({
-                        "transaction_id": tx.get("transaction_id", idx),
+                        "transaction_id": tx.transaction_id,
                         "rule_id": result.rule_id,
                         "rule_name": result.rule_name,
                         "severity": result.severity.name if result.severity else "",
                         "weight": result.weight,
                         "details": str(result.details),
                     })
-            progress.progress((idx + 1) / len(df))
+            progress.progress((idx + 1) / len(all_transactions))
         progress.empty()
 
         if results_rows:
