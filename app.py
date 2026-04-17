@@ -12,6 +12,11 @@ from src.rules import ALL_RULES
 from src.transaction.transaction import Transaction
 from src.rules_runner import RulesRunner
 from datetime import datetime
+from src.neo4j_provider import Neo4jGraphProvider
+from src.risk.risk_calculator import RiskCalculator, RiskAssessment
+
+provider = Neo4jGraphProvider()
+risk_calculator = RiskCalculator()
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Fraud Detection Dashboard", page_icon="🔍", layout="wide")
@@ -37,12 +42,22 @@ def get_data(n: int, ratio: float, _file=None):
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    transactions: list[Transaction] = []
-    for record in df.to_dict(orient="records"):
-        transactions.append(Transaction(**record))
-    
     rules_runner = RulesRunner(rules=[RuleClass() for RuleClass in ALL_RULES])
-    result = rules_runner.run_detection(transactions)
+    risk_assessments: list[RiskAssessment] = []
+    
+    for record in df.to_dict(orient="records"):
+        # Create transaction object
+        tx = Transaction(**record)
+        
+        # Add to provider
+        provider.ingest_transactions([tx])
+        
+        # Check rules
+        rule_results = rules_runner.run_detection([tx])
+        
+        # Calculate risk
+        assessment = risk_calculator.calculate_risk(rule_results[0], tx)
+        risk_assessments.append(assessment)
 else:
     df = get_data(n_samples, fraud_ratio, None)
 
