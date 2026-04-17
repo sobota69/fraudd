@@ -1,14 +1,41 @@
 """R21 – Rapid Account Emptying.
 
-Trigger if balance drop > 70% in 1h (filtered by customer_account / IBAN).
+Large proportion of an account's balance withdrawn quickly suggests coercion
+or account takeover.
+
+**Important**: this rule filters history by ``customer_account`` (IBAN), NOT
+by ``customer_id``, because the balance belongs to a specific bank account.
+
+Trigger condition
+-----------------
+Balance drops by more than 70 % within a 1-hour window ending at the
+current transaction.
+
+Algorithm
+---------
+1. Consider a 1-hour window *prior* to the current transaction.
+2. Find the last transaction on the **same account** that occurred *before*
+   the window start.  Its ``customer_account_balance`` is ``balance_before``.
+3. If no such transaction exists, infer:
+       balance_before = current_balance + current_amount
+   (i.e. what the balance was just before this single transaction).
+4. ``balance_after`` = current transaction's ``customer_account_balance``.
+5. ``drop_ratio`` = (balance_before − balance_after) / balance_before.
+6. If drop_ratio > 0.70 → STRONG trigger.
+
 Severity: STRONG (2) | Weight: 20 | Optional
 """
 
 from __future__ import annotations
-from typing import Optional
-import pandas as pd
 
+from datetime import timedelta
+from typing import List, Optional
+
+from transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
+
+_WINDOW_HOURS = 1
+_DROP_THRESHOLD = 0.70
 
 
 class R21RapidAccountEmptying(BaseRule):
@@ -18,12 +45,66 @@ class R21RapidAccountEmptying(BaseRule):
     weight = 20
     mandatory = False
 
-    def evaluate(self, transaction: pd.Series, history: Optional[pd.DataFrame] = None) -> RuleResult:
-        # TODO: calculate balance drop ratio over 1h window by customer_account
+    def evaluate(
+        self,
+        transaction: Transaction,
+        history: Optional[List[Transaction]] = None,
+    ) -> RuleResult:
+        balance_after = transaction.customer_account_balance
+        window_start = transaction.transaction_timestamp - timedelta(hours=_WINDOW_HOURS)
+
+        # ── determine balance_before ─────────────────────────────────
+        balance_before: Optional[float] = None
+
+        if history:
+            # Transactions on the SAME account that happened BEFORE the window
+            pre_window_txs = [
+                tx for tx in history
+                if tx.customer_account == transaction.customer_account
+                and tx.transaction_id != transaction.transaction_id
+                and tx.transaction_timestamp < window_start
+            ]
+            if pre_window_txs:
+                # Pick the most recent one before the window
+                pre_window_txs.sort(
+                    key=lambda tx: tx.transaction_timestamp, reverse=True
+                )
+                balance_before = pre_window_txs[0].customer_account_balance
+
+        # Fallback: infer from current transaction
+        if balance_before is None:
+            balance_before = balance_after + transaction.amount
+
+        # ── guard: cannot compute meaningful ratio ────────────────────
+        if balance_before <= 0:
+            return self._no_trigger()
+
+        drop_ratio = (balance_before - balance_after) / balance_before
+
+        if drop_ratio > _DROP_THRESHOLD:
+            return RuleResult(
+                rule_id=self.rule_id,
+                rule_name=self.rule_name,
+                triggered=True,
+                severity=Severity.STRONG,
+                weight=self.weight,
+                details={
+                    "balance_before": round(balance_before, 2),
+                    "balance_after": round(balance_after, 2),
+                    "drop_ratio": round(drop_ratio, 4),
+                    "drop_threshold": _DROP_THRESHOLD,
+                    "window_hours": _WINDOW_HOURS,
+                    "customer_account": transaction.customer_account,
+                },
+            )
+
+        return self._no_trigger()
+
+    def _no_trigger(self) -> RuleResult:
         return RuleResult(
             rule_id=self.rule_id,
             rule_name=self.rule_name,
             triggered=False,
-            severity=Severity.STRONG,
+            severity=None,
             weight=self.weight,
         )

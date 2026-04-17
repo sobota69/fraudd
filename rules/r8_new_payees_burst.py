@@ -1,14 +1,20 @@
 """R8 – New Payees Burst.
 
-Trigger if ≥3 new payees in 24h.
+Trigger if ≥3 transactions with is_new_beneficiary=True from the same customer
+within a 24-hour window ending at the current transaction.
 Severity: MILD (1) | Weight: 8 | Optional
 """
 
 from __future__ import annotations
-from typing import Optional
-import pandas as pd
 
+from datetime import timedelta
+from typing import List, Optional
+
+from transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
+
+_WINDOW_HOURS = 24
+_MIN_NEW_PAYEES = 3
 
 
 class R8NewPayeesBurst(BaseRule):
@@ -18,12 +24,63 @@ class R8NewPayeesBurst(BaseRule):
     weight = 8
     mandatory = False
 
-    def evaluate(self, transaction: pd.Series, history: Optional[pd.DataFrame] = None) -> RuleResult:
-        # TODO: count new beneficiaries in 24h window for customer_id
+    def evaluate(
+        self,
+        transaction: Transaction,
+        history: Optional[List[Transaction]] = None,
+    ) -> RuleResult:
+        """Evaluate the New Payees Burst rule.
+
+        Steps
+        -----
+        1. Check if the current transaction itself is to a new beneficiary.
+        2. Define a 24-hour window ending at the current transaction.
+        3. Filter history to same customer_id, within window, with
+           is_new_beneficiary=True (excluding current tx).
+        4. Total new-payee count = filtered history + (1 if current is new).
+        5. If count ≥ 3 → MILD trigger.
+        """
+
+        current_is_new = bool(transaction.is_new_beneficiary)
+
+        if not history:
+            # At most 1 new payee (the current tx) – can never reach 3
+            return self._no_trigger()
+
+        window_start = transaction.transaction_timestamp - timedelta(hours=_WINDOW_HOURS)
+
+        new_payee_txs = [
+            tx for tx in history
+            if tx.customer_id == transaction.customer_id
+            and tx.transaction_id != transaction.transaction_id
+            and window_start <= tx.transaction_timestamp <= transaction.transaction_timestamp
+            and tx.is_new_beneficiary
+        ]
+
+        total_new = len(new_payee_txs) + (1 if current_is_new else 0)
+
+        if total_new >= _MIN_NEW_PAYEES:
+            return RuleResult(
+                rule_id=self.rule_id,
+                rule_name=self.rule_name,
+                triggered=True,
+                severity=Severity.MILD,
+                weight=self.weight,
+                details={
+                    "new_payee_count_in_window": total_new,
+                    "window_hours": _WINDOW_HOURS,
+                    "threshold": _MIN_NEW_PAYEES,
+                    "current_is_new_beneficiary": current_is_new,
+                },
+            )
+
+        return self._no_trigger()
+
+    def _no_trigger(self) -> RuleResult:
         return RuleResult(
             rule_id=self.rule_id,
             rule_name=self.rule_name,
             triggered=False,
-            severity=Severity.MILD,
+            severity=None,
             weight=self.weight,
         )
