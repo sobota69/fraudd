@@ -18,9 +18,9 @@ Rule specification (from HACKATHON_FRAML_RULES.xlsx)
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from transaction.transaction import Transaction
-from rules.r18_round_amounts_anomaly import R18RoundAmountsAnomaly, _is_round_amount
-from rules.base_rule import Severity
+from src.transaction.transaction import Transaction
+from src.rules.r18_round_amounts_anomaly import R18RoundAmountsAnomaly, _is_round_amount
+from src.rules.base_rule import Severity
 
 
 NOW = datetime(2025, 12, 19, 12, 0, 0, tzinfo=timezone.utc)

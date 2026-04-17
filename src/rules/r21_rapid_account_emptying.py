@@ -31,7 +31,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import List, Optional
 
-from transaction.transaction import Transaction
+from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
 
 _WINDOW_HOURS = 1

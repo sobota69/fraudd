@@ -4,13 +4,13 @@ import pytest
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-from transaction.transaction import Transaction
-from rules.r13_unusual_hour import (
+from src.transaction.transaction import Transaction
+from src.rules.r13_unusual_hour import (
     R13UnusualHour,
     find_smallest_90pct_window,
     hour_in_window,
 )
-from rules.base_rule import Severity
+from src.rules.base_rule import Severity
 
 
 NOW = datetime(2025, 12, 19, 3, 0, 0, tzinfo=timezone.utc)  # 03:00 UTC

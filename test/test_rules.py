@@ -3,7 +3,7 @@
 import pytest
 import pandas as pd
 
-from rules import (
+from src.rules import (
     ALL_RULES,
     R1CopNameMismatchHard,
     R2CopNameMismatchSoft,
@@ -20,7 +20,7 @@ from rules import (
     R22AbsoluteHighValue,
     R24ChannelSpecificThreshold,
 )
-from rules.base_rule import RuleResult
+from src.rules.base_rule import RuleResult
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────

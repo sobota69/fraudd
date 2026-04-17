@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from transaction.transaction import Transaction
+from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
 
 # How far back to look for the customer's average spending

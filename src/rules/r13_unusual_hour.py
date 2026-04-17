@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import List, Optional, Tuple
 
-from transaction.transaction import Transaction
+from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
 
 _MIN_HISTORY = 10

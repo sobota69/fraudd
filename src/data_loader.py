@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 #from .transaction import Transaction
-from transaction import Transaction
+from src.transaction import Transaction
 
 
 

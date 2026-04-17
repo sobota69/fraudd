@@ -8,11 +8,10 @@ import plotly.graph_objects as go
 
 from src.data_loader import generate_synthetic_data, preprocess, analyse_dataframe
 from src.model import train_model
-from rules import ALL_RULES
-from transaction.transaction import Transaction
-from datetime import datetime
-from transaction.transaction import Transaction
+from src.rules import ALL_RULES
+from src.transaction.transaction import Transaction
 from src.rules_runner import RulesRunner
+from datetime import datetime
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Fraud Detection Dashboard", page_icon="🔍", layout="wide")

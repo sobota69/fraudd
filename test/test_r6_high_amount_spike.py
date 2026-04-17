@@ -3,9 +3,9 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from transaction.transaction import Transaction
-from rules.r6_high_amount_spike import R6HighAmountSpike
-from rules.base_rule import Severity
+from src.transaction.transaction import Transaction
+from src.rules.r6_high_amount_spike import R6HighAmountSpike
+from src.rules.base_rule import Severity
 
 
 NOW = datetime(2025, 12, 19, 12, 0, 0, tzinfo=timezone.utc)

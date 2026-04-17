@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from transaction.transaction import Transaction
+from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
 
 _AMOUNT_THRESHOLD = 15_000.0

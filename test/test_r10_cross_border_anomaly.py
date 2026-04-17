@@ -3,9 +3,9 @@
 import pytest
 from datetime import datetime, timezone
 
-from transaction.transaction import Transaction
-from rules.r10_cross_border_anomaly import R10CrossBorderAnomaly, _country_from_iban
-from rules.base_rule import Severity
+from src.transaction.transaction import Transaction
+from src.rules.r10_cross_border_anomaly import R10CrossBorderAnomaly, _country_from_iban
+from src.rules.base_rule import Severity
 
 
 NOW = datetime(2025, 12, 19, 12, 0, 0, tzinfo=timezone.utc)

@@ -1,8 +1,8 @@
 
 from typing import List
-from rules.base_rule import RuleResult
-from rules.base_rule import BaseRule
-from transaction import Transaction
+from src.rules.base_rule import RuleResult
+from src.rules.base_rule import BaseRule
+from src.transaction import Transaction
 
 class RulesRunner:
     def __init__(self, rules: List[BaseRule]):

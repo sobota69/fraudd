@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import List, Optional
 
-from transaction.transaction import Transaction
+from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
 
 # Window size and minimum transaction count (including the current one)
