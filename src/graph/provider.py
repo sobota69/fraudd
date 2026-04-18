@@ -9,7 +9,7 @@ from neo4j import GraphDatabase, RoutingControl
 from src.risk.risk_calculator import RiskAssessment
 from src.transaction.transaction import Transaction
 #from .model import ClientActivityWindow, CountryStat, Transaction, TransactionSummary
-from .cypher_commands import COUNT_CLIENT_TRANSACTIONS_SINCE_CYPHER, DELETE_ALL_NODES, DROP_SCHEMA_STATEMENTS, GET_CLIENT_ACTIVITY_WINDOW_CYPHER, GET_CLIENT_AVG_AMOUNT_CYPHER, UPDATE_TRANSACTION_ASSESSMENT
+from .cypher_commands import COUNT_CLIENT_TRANSACTIONS_SINCE_CYPHER, DELETE_ALL_NODES, DROP_SCHEMA_STATEMENTS, GET_CLIENT_ACTIVITY_WINDOW_CYPHER, GET_CLIENT_AVG_AMOUNT_CYPHER, UPDATE_TRANSACTIONS_ASSESSMENTS
 from .cypher_commands import GET_CLIENT_TRANSACTION_COUNTRIES_CYPHER, GET_CLIENT_TRANSACTIONS_BY_PROPERTY, GET_PREVIOUS_TRANSACTION_CYPHER, SCHEMA_CONSTRAINTS, SCHEMA_INDEXES_OPTIONAL, SCHEMA_INDEXES_REQUIRED, UPSERT_TRANSACTIONS_CYPHER
 
 
@@ -127,8 +127,11 @@ class Neo4jGraphProvider:
             batch.append(self._to_graph_row_transaction(tx))
         self._run_write(UPSERT_TRANSACTIONS_CYPHER, transactions=batch)
 
-    def update_risk_assesment(self, assessment: RiskAssessment):
-        self._run_write(UPDATE_TRANSACTION_ASSESSMENT, ass = self._to_graph_row_assessment(assessment))
+    def update_risk_assesment(self, assessments: Sequence[RiskAssessment]) -> None:
+        batch: list[dict[str, Any]] = []
+        for assessment in assessments:
+            batch.append(self._to_graph_row_assessment(assessment))
+        self._run_write(UPDATE_TRANSACTIONS_ASSESSMENTS, assessments=batch)
 
     # # -------------------------------------------------------------------------
     # # Reads / rule queries

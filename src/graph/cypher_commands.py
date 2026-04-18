@@ -111,7 +111,16 @@ ON CREATE SET
 MERGE (t)-[:TO]->(b);
     """
 
-UPDATE_TRANSACTION_ASSESSMENT = """
+UPDATE_TRANSACTIONS_ASSESSMENTS = """
+
+UNWIND $assessments AS u
+MATCH (t:Transaction {transaction_id: u.transaction_id})
+SET
+    t.triggered_rules       = u.triggered_rules,
+    t.is_fraud_transaction  = u.is_fraud_transaction,
+    t.risk_score            = u.risk_score,
+    t.risk_category         = u.risk_category;
+
     """
 
 GET_CLIENT_AVG_AMOUNT_CYPHER = """

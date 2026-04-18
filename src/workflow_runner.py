@@ -34,6 +34,8 @@ class WorkflowRunner:
         all_rule_results: list[list] = []  # per-transaction rule results
         total_start = _time.perf_counter()
 
+        print(f"Processing {len(df)} transactions started")
+
         # Pre-build all Transaction objects and index by customer_id
         transactions: list[Transaction] = []
         customer_history: dict[int, list[Transaction]] = defaultdict(list)
@@ -50,10 +52,12 @@ class WorkflowRunner:
 
         print(f"Built {len(transactions)} transactions + index in {_time.perf_counter() - t0:.2f}s")
 
+        t1 = _time.perf_counter()
         self.provider.save_transactions(transactions) # Batch save all transactions to graph
 
-        print(f"Saved transactions to graph in {_time.perf_counter() - total_start:.2f}s, now running rules...")
+        print(f"Saved transactions to graph in {_time.perf_counter() - t1:.2f}s")
 
+        t2 = _time.perf_counter()
         for i, tx in enumerate(transactions):
             history = customer_history.get(tx.customer_id, [])
             rule_results = rules_runner.run_detection(tx, history=history)
@@ -61,7 +65,12 @@ class WorkflowRunner:
             assessment = risk_calculator.calculate_risk(rule_results, tx)
             risk_assessments.append(assessment)
 
-        elapsed = _time.perf_counter() - total_start
+        print(f"Calculated risk assessments for all transactions in {_time.perf_counter() - t2:.2f}s")
+
+        t3 = _time.perf_counter()
+        self.provider.update_risk_assesment(risk_assessments)
+
+        print(f"Updated risk assessments in graph in {_time.perf_counter() - t3:.2f}s")        
 
         # Save all results to CSV at once
         output_file = "risk_assessments.csv"
@@ -76,6 +85,7 @@ class WorkflowRunner:
             for a in risk_assessments
         ]
 
+        elapsed = _time.perf_counter() - total_start
         pd.DataFrame(rows).to_csv(output_file, index=False)
         print(f"\n✅ All {len(df)} transactions processed in {elapsed:.2f}s")
 
