@@ -308,11 +308,47 @@ def _render_graph_explorer(provider: Neo4jGraphProvider) -> None:
     legend_cols[4].markdown('<span style="color:#FFA15A">⬤</span> **Medium-Risk TX**', unsafe_allow_html=True)
     legend_cols[5].markdown('<span style="color:#E84393">⬤</span> **Beneficiary**', unsafe_allow_html=True)
 
-    agraph(
+    # Focus mode: click a node to show only its neighborhood
+    selected_node = agraph(
         nodes=list(nodes_map.values()),
         edges=edges,
         config=config,
     )
+
+    # If a node was clicked, show a focused sub-graph with only its neighbors
+    if selected_node:
+        # Find neighbor node IDs
+        neighbor_ids = {selected_node}
+        for e in edges:
+            if e.source == selected_node:
+                neighbor_ids.add(e.to)
+            elif e.to == selected_node:
+                neighbor_ids.add(e.source)
+
+        focused_nodes = [n for n in nodes_map.values() if n.id in neighbor_ids]
+        focused_edges = [e for e in edges if e.source in neighbor_ids and e.to in neighbor_ids]
+
+        selected_label = nodes_map[selected_node].title if selected_node in nodes_map else selected_node
+        st.info(f"🔎 **Focused view** for node: **{selected_label}** — showing {len(focused_nodes)} connected nodes. Select another customer above to reset.")
+
+        focus_config = Config(
+            width="100%",
+            height=450,
+            directed=True,
+            physics=True,
+            hierarchical=False,
+            nodeHighlightBehavior=True,
+            highlightColor="#F7A7A6",
+            collapsible=False,
+            node={"labelProperty": "label"},
+            link={"labelProperty": "label", "renderLabel": True},
+        )
+
+        agraph(
+            nodes=focused_nodes,
+            edges=focused_edges,
+            config=focus_config,
+        )
 
     # ── Transaction detail table below the graph ─────────────────────────────
     with st.expander(f"📋 All transactions for customer {selected_cid} ({len(rows)} rows)", expanded=False):
@@ -534,11 +570,36 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
         st.subheader("🌍 Cross-Border Transaction Flows")
         cf_df = pd.DataFrame(country_flows)
 
+        # Convert 2-letter ISO codes to 3-letter for choropleth
+        _ISO2_TO_ISO3 = {
+            "AF":"AFG","AL":"ALB","DZ":"DZA","AD":"AND","AO":"AGO","AG":"ATG","AR":"ARG","AM":"ARM","AU":"AUS","AT":"AUT",
+            "AZ":"AZE","BS":"BHS","BH":"BHR","BD":"BGD","BB":"BRB","BY":"BLR","BE":"BEL","BZ":"BLZ","BJ":"BEN","BT":"BTN",
+            "BO":"BOL","BA":"BIH","BW":"BWA","BR":"BRA","BN":"BRN","BG":"BGR","BF":"BFA","BI":"BDI","CV":"CPV","KH":"KHM",
+            "CM":"CMR","CA":"CAN","CF":"CAF","TD":"TCD","CL":"CHL","CN":"CHN","CO":"COL","KM":"COM","CG":"COG","CD":"COD",
+            "CR":"CRI","CI":"CIV","HR":"HRV","CU":"CUB","CY":"CYP","CZ":"CZE","DK":"DNK","DJ":"DJI","DM":"DMA","DO":"DOM",
+            "EC":"ECU","EG":"EGY","SV":"SLV","GQ":"GNQ","ER":"ERI","EE":"EST","SZ":"SWZ","ET":"ETH","FJ":"FJI","FI":"FIN",
+            "FR":"FRA","GA":"GAB","GM":"GMB","GE":"GEO","DE":"DEU","GH":"GHA","GR":"GRC","GD":"GRD","GT":"GTM","GN":"GIN",
+            "GW":"GNB","GY":"GUY","HT":"HTI","HN":"HND","HU":"HUN","IS":"ISL","IN":"IND","ID":"IDN","IR":"IRN","IQ":"IRQ",
+            "IE":"IRL","IL":"ISR","IT":"ITA","JM":"JAM","JP":"JPN","JO":"JOR","KZ":"KAZ","KE":"KEN","KI":"KIR","KP":"PRK",
+            "KR":"KOR","KW":"KWT","KG":"KGZ","LA":"LAO","LV":"LVA","LB":"LBN","LS":"LSO","LR":"LBR","LY":"LBY","LI":"LIE",
+            "LT":"LTU","LU":"LUX","MG":"MDG","MW":"MWI","MY":"MYS","MV":"MDV","ML":"MLI","MT":"MLT","MH":"MHL","MR":"MRT",
+            "MU":"MUS","MX":"MEX","FM":"FSM","MD":"MDA","MC":"MCO","MN":"MNG","ME":"MNE","MA":"MAR","MZ":"MOZ","MM":"MMR",
+            "NA":"NAM","NR":"NRU","NP":"NPL","NL":"NLD","NZ":"NZL","NI":"NIC","NE":"NER","NG":"NGA","MK":"MKD","NO":"NOR",
+            "OM":"OMN","PK":"PAK","PW":"PLW","PA":"PAN","PG":"PNG","PY":"PRY","PE":"PER","PH":"PHL","PL":"POL","PT":"PRT",
+            "QA":"QAT","RO":"ROU","RU":"RUS","RW":"RWA","KN":"KNA","LC":"LCA","VC":"VCT","WS":"WSM","SM":"SMR","ST":"STP",
+            "SA":"SAU","SN":"SEN","RS":"SRB","SC":"SYC","SL":"SLE","SG":"SGP","SK":"SVK","SI":"SVN","SB":"SLB","SO":"SOM",
+            "ZA":"ZAF","SS":"SSD","ES":"ESP","LK":"LKA","SD":"SDN","SR":"SUR","SE":"SWE","CH":"CHE","SY":"SYR","TW":"TWN",
+            "TJ":"TJK","TZ":"TZA","TH":"THA","TL":"TLS","TG":"TGO","TO":"TON","TT":"TTO","TN":"TUN","TR":"TUR","TM":"TKM",
+            "TV":"TUV","UG":"UGA","UA":"UKR","AE":"ARE","GB":"GBR","US":"USA","UY":"URY","UZ":"UZB","VU":"VUT","VE":"VEN",
+            "VN":"VNM","YE":"YEM","ZM":"ZMB","ZW":"ZWE",
+        }
+        cf_df["iso3"] = cf_df["country"].map(_ISO2_TO_ISO3)
+
         v1, v2 = st.columns(2)
         with v1:
             fig = px.choropleth(
-                cf_df, locations="country", locationmode="ISO-3",
-                color="total_amount", hover_data=["tx_count", "avg_amount"],
+                cf_df, locations="iso3", locationmode="ISO-3",
+                color="total_amount", hover_data=["country", "tx_count", "avg_amount"],
                 title="Transaction Volume by Destination Country",
                 color_continuous_scale="Viridis",
             )
