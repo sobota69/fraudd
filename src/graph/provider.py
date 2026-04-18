@@ -137,6 +137,19 @@ class Neo4jGraphProvider:
     # # Reads / rule queries
     # # -------------------------------------------------------------------------
 
+    def get_client_transactions_no_in_time(
+        self,
+        customer_id: int,
+        timestamp: datetime,
+        minutes: int) -> int:
+        row = self._run_read_one(
+            COUNT_CLIENT_TRANSACTIONS_SINCE_CYPHER,
+            customer_id=customer_id,
+            from_timestamp=timestamp - timedelta(minutes=minutes),
+            to_timestamp=timestamp
+        )
+        return int(row["tx_count"]) if row else 0
+
     # def get_client_30d_avg_amount(
     #     self,
     #     customer_id: int,

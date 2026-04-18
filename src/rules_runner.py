@@ -5,13 +5,15 @@ from src.rules.base_rule import BaseRule
 from src.rules.group.cop_group import CopGroup
 from src.rules.group.amount_stats_group import AmountStatsGroup
 from src.rules.group.threshold_group import ThresholdGroup
+from src.rules.group.frequency_group import FrequencyGroup
 from src.transaction import Transaction
 
 # Rule IDs handled by each group – skip individual rules for these
 _COP_IDS = frozenset({"R1", "R2", "R3"})
 _AMOUNT_STATS_IDS = frozenset({"R6", "R12"})
 _THRESHOLD_IDS = frozenset({"R22", "R24"})
-_GROUPED_IDS = _COP_IDS | _AMOUNT_STATS_IDS | _THRESHOLD_IDS
+_FREQUENCY_IDS = frozenset({"R7", "R8", "R17"})
+_GROUPED_IDS = _COP_IDS | _AMOUNT_STATS_IDS | _THRESHOLD_IDS | _FREQUENCY_IDS
 
 
 class RulesRunner:
@@ -23,6 +25,7 @@ class RulesRunner:
         self._cop_group = CopGroup()
         self._amount_stats_group = AmountStatsGroup()
         self._threshold_group = ThresholdGroup()
+        self._frequency_group = FrequencyGroup()
 
     def run_detection(
         self,
@@ -42,6 +45,7 @@ class RulesRunner:
         all_results.extend(self._cop_group.evaluate(transaction, history))
         all_results.extend(self._amount_stats_group.evaluate(transaction, history))
         all_results.extend(self._threshold_group.evaluate(transaction, history))
+        all_results.extend(self._frequency_group.evaluate(transaction, history))
 
         # ── Individual rules (direct calls, no thread pool) ───────────────
         for rule in self._individual_rules:

@@ -134,8 +134,8 @@ GET_CLIENT_AVG_AMOUNT_CYPHER = """
 COUNT_CLIENT_TRANSACTIONS_SINCE_CYPHER = """
     MATCH (t:Transaction)
     WHERE t.customer_id = $customer_id
-      AND t.transaction_timestamp >= $since
-      AND ($customer_account IS NULL OR t.customer_account = $customer_account)
+      AND t.transaction_timestamp >= $from_timestamp
+      AND t.transaction_timestamp < $to_timestamp
     RETURN count(t) AS tx_count
     """
 

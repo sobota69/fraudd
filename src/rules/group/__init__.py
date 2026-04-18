@@ -3,5 +3,6 @@
 from .cop_group import CopGroup
 from .amount_stats_group import AmountStatsGroup
 from .threshold_group import ThresholdGroup
+from .frequency_group import FrequencyGroup
 
-__all__ = ["CopGroup", "AmountStatsGroup", "ThresholdGroup"]
+__all__ = ["CopGroup", "AmountStatsGroup", "ThresholdGroup", "FrequencyGroup"]
