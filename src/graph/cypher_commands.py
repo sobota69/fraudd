@@ -19,16 +19,6 @@ SCHEMA_CONSTRAINTS: tuple[str, ...] = (
         FOR (b:Beneficiary)
         REQUIRE b.beneficiary_account IS UNIQUE
         """,
-        """
-        CREATE CONSTRAINT device_device_id_unique IF NOT EXISTS
-        FOR (d:Device)
-        REQUIRE d.device_id IS UNIQUE
-        """,
-        """
-        CREATE CONSTRAINT channel_channel_unique IF NOT EXISTS
-        FOR (ch:Channel)
-        REQUIRE ch.channel IS UNIQUE
-        """,
     )
 
 SCHEMA_INDEXES_REQUIRED: tuple[str, ...] = (
@@ -51,16 +41,6 @@ SCHEMA_INDEXES_REQUIRED: tuple[str, ...] = (
 
 SCHEMA_INDEXES_OPTIONAL: tuple[str, ...] = (
         """
-        CREATE INDEX tx_channel_time_idx IF NOT EXISTS
-        FOR (t:Transaction)
-        ON (t.channel, t.transaction_timestamp)
-        """,
-        """
-        CREATE INDEX tx_device_time_idx IF NOT EXISTS
-        FOR (t:Transaction)
-        ON (t.device_id, t.transaction_timestamp)
-        """,
-        """
         CREATE INDEX tx_new_beneficiary_time_idx IF NOT EXISTS
         FOR (t:Transaction)
         ON (t.is_new_beneficiary, t.transaction_timestamp)
@@ -77,91 +57,68 @@ DELETE_ALL_NODES: str = """MATCH (n) DETACH DELETE n"""
 DROP_SCHEMA_STATEMENTS: tuple[str, ...] = (
         "DROP INDEX tx_beneficiary_country_time_idx IF EXISTS",
         "DROP INDEX tx_new_beneficiary_time_idx IF EXISTS",
-        "DROP INDEX tx_device_time_idx IF EXISTS",
-        "DROP INDEX tx_channel_time_idx IF EXISTS",
         "DROP INDEX tx_timestamp_idx IF EXISTS",
         "DROP INDEX tx_account_time_idx IF EXISTS",
         "DROP INDEX tx_customer_time_idx IF EXISTS",
-        "DROP CONSTRAINT channel_channel_unique IF EXISTS",
-        "DROP CONSTRAINT device_device_id_unique IF EXISTS",
         "DROP CONSTRAINT beneficiary_account_unique IF EXISTS",
         "DROP CONSTRAINT transaction_transaction_id_unique IF EXISTS",
         "DROP CONSTRAINT customer_account_account_unique IF EXISTS",
         "DROP CONSTRAINT customer_customer_id_unique IF EXISTS",
     )
 
-UPSERT_TRANSACTIONS_CYPHER = """
-    UNWIND $rows AS row
-
-    MERGE (c:Customer {customer_id: row.customer_id})
-    MERGE (ca:CustomerAccount {customer_account: row.customer_account})
+UPSERT_TRANSACTION_CYPHER = """
+    MERGE (c:Customer {customer_id: $tx.customer_id})
+    MERGE (ca:CustomerAccount {customer_account: $tx.customer_account})
 
     // keep ownership canonical: one account -> one owner in this model
     OPTIONAL MATCH (other_c:Customer)-[old_owns:OWNS]->(ca)
-    WHERE other_c.customer_id <> row.customer_id
+    WHERE other_c.customer_id <> $tx.customer_id
     DELETE old_owns
 
     MERGE (c)-[:OWNS]->(ca)
 
-    MERGE (t:Transaction {transaction_id: row.transaction_id})
+    MERGE (t:Transaction {transaction_id: $tx.transaction_id})
     SET
-        t.transaction_timestamp = row.transaction_timestamp,
-        t.amount = row.amount,
-        t.currency = row.currency,
-        t.is_new_beneficiary = row.is_new_beneficiary,
-        t.entered_beneficiary_name = row.entered_beneficiary_name,
-        t.customer_account_balance = row.customer_account_balance,
+        t.transaction_timestamp = datetime($tx.transaction_timestamp),
+        t.amount = $tx.amount,
+        t.currency = $tx.currency,
+        t.is_new_beneficiary = $tx.is_new_beneficiary,
+        t.entered_beneficiary_name = $tx.entered_beneficiary_name,
+        t.customer_account_balance = $tx.customer_account_balance,
+        t.device_id = $tx.device_id,
+        t.channel = $tx.channel,
 
         // denormalized query-helper fields
-        t.customer_id = row.customer_id,
-        t.customer_account = row.customer_account,
-        t.beneficiary_account = row.beneficiary_account,
-        t.beneficiary_country = row.beneficiary_country,
-        t.device_id = row.device_id,
-        t.channel = row.channel,
+        t.customer_id = $tx.customer_id,
+        t.customer_account = $tx.customer_account,
+        t.beneficiary_account = $tx.beneficiary_account,
+        t.beneficiary_country = $tx.beneficiary_country,        
 
         // recommended helper fields
-        t.transaction_hour_of_day = row.transaction_hour_of_day,
-        t.transaction_day_of_week = row.transaction_day_of_week
+        t.transaction_hour_of_day = $tx.transaction_hour_of_day,
+        t.transaction_day_of_week = $tx.transaction_day_of_week
 
     // keep source account canonical for this transaction
     OPTIONAL MATCH (old_ca:CustomerAccount)-[old_transfer:TRANSFER]->(t)
-    WHERE old_ca.customer_account <> row.customer_account
+    WHERE old_ca.customer_account <> $tx.customer_account
     DELETE old_transfer
 
     MERGE (ca)-[:TRANSFER]->(t)
 
-    MERGE (b:Beneficiary {beneficiary_account: row.beneficiary_account})
+    MERGE (b:Beneficiary {beneficiary_account: $tx.beneficiary_account})
     SET
-        b.official_beneficiary_account_name =
-            coalesce(row.official_beneficiary_account_name, b.official_beneficiary_account_name),
-        b.beneficiary_country =
-            coalesce(row.beneficiary_country, b.beneficiary_country)
+        b.official_beneficiary_account_name = $tx.official_beneficiary_account_name
+        b.beneficiary_country = $tx.beneficiary_country
 
     // keep beneficiary canonical for this transaction
     OPTIONAL MATCH (t)-[old_to:TO]->(old_b:Beneficiary)
-    WHERE old_b.beneficiary_account <> row.beneficiary_account
+    WHERE old_b.beneficiary_account <> $tx.beneficiary_account
     DELETE old_to
 
     MERGE (t)-[:TO]->(b)
+    """
 
-    MERGE (d:Device {device_id: row.device_id})
-
-    // keep device canonical for this transaction
-    OPTIONAL MATCH (t)-[old_ud:USING_DEVICE]->(old_d:Device)
-    WHERE old_d.device_id <> row.device_id
-    DELETE old_ud
-
-    MERGE (t)-[:USING_DEVICE]->(d)
-
-    MERGE (ch:Channel {channel: row.channel})
-
-    // keep channel canonical for this transaction
-    OPTIONAL MATCH (t)-[old_oc:ON_CHANNEL]->(old_ch:Channel)
-    WHERE old_ch.channel <> row.channel
-    DELETE old_oc
-
-    MERGE (t)-[:ON_CHANNEL]->(ch)
+UPDATE_TRANSACTION_ASSESSMENT = """
     """
 
 GET_CLIENT_AVG_AMOUNT_CYPHER = """

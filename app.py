@@ -27,7 +27,7 @@ df = pd.read_csv(uploaded_file)
 _cache_key = f"wf_result_{uploaded_file.name}_{uploaded_file.size}"
 if _cache_key not in st.session_state:
     with st.spinner("Processing transactions…"):
-        st.session_state[_cache_key] = WorkflowRunner().run_process(df)
+        st.session_state[_cache_key] = WorkflowRunner().run_process_list(df)
 wf_result = st.session_state[_cache_key]
 
 # ── FRAML Alert Dashboard (top of page) ──────────────────────────────────────
