@@ -356,7 +356,7 @@ class TestR17SmurfingStructuring:
             for i in range(3)
         ]
         result = self.rule.evaluate(
-            _make_tx(amount=14_000.0), history=inside + outside
+            _make_tx(amount=14_000.0), history=sorted(inside + outside, key=lambda t: t.transaction_timestamp)
         )
         assert result.triggered is False
 
@@ -372,7 +372,7 @@ class TestR17SmurfingStructuring:
             for i in range(3)
         ]
         result = self.rule.evaluate(
-            _make_tx(amount=14_000.0), history=inside + outside
+            _make_tx(amount=14_000.0), history=sorted(inside + outside, key=lambda t: t.transaction_timestamp)
         )
         assert result.triggered is True
         assert result.details["structuring_tx_count"] == 5

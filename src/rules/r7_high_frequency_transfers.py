@@ -12,6 +12,7 @@ from typing import List, Optional
 
 from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
+from .bisect_helpers import window_slice
 
 # Window size and minimum transaction count (including the current one)
 _WINDOW_MINUTES = 10
@@ -47,11 +48,10 @@ class R7HighFrequencyTransfers(BaseRule):
 
         window_start = transaction.transaction_timestamp - timedelta(minutes=_WINDOW_MINUTES)
 
-        recent_txs = [
-            tx for tx in history
-            if tx.transaction_id != transaction.transaction_id
-            and window_start <= tx.transaction_timestamp <= transaction.transaction_timestamp
-        ]
+        recent_txs = window_slice(
+            history, window_start, transaction.transaction_timestamp,
+            exclude_id=transaction.transaction_id,
+        )
 
         # total count = historical matches + the current transaction itself
         total_count = len(recent_txs) + 1

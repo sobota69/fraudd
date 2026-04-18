@@ -19,6 +19,7 @@ from typing import List, Optional
 
 from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
+from .bisect_helpers import window_slice
 
 _WINDOW_HOURS = 48
 _MIN_ROUND_COUNT = 3
@@ -61,10 +62,11 @@ class R18RoundAmountsAnomaly(BaseRule):
         window_start = transaction.transaction_timestamp - timedelta(hours=_WINDOW_HOURS)
 
         round_txs = [
-            tx for tx in history
-            if tx.transaction_id != transaction.transaction_id
-            and window_start <= tx.transaction_timestamp <= transaction.transaction_timestamp
-            and _is_round_amount(tx.amount)
+            tx for tx in window_slice(
+                history, window_start, transaction.transaction_timestamp,
+                exclude_id=transaction.transaction_id,
+            )
+            if _is_round_amount(tx.amount)
         ]
 
         total = len(round_txs) + (1 if current_is_round else 0)

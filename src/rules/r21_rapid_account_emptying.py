@@ -34,6 +34,8 @@ from typing import List, Optional
 from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
 
+from bisect import bisect_left
+
 _WINDOW_HOURS = 1
 _DROP_THRESHOLD = 0.70
 
@@ -57,16 +59,19 @@ class R21RapidAccountEmptying(BaseRule):
         balance_before: Optional[float] = None
 
         if history:
-            # Transactions on the SAME account that happened BEFORE the window
-            pre_window_txs = [
-                tx for tx in history
-                if tx.customer_account == transaction.customer_account
-                and tx.transaction_id != transaction.transaction_id
-                and tx.transaction_timestamp < window_start
-            ]
-            if pre_window_txs:
-                latest = max(pre_window_txs, key=lambda tx: tx.transaction_timestamp)
-                balance_before = latest.customer_account_balance
+            # History is sorted by timestamp. bisect to find where window_start sits,
+            # then scan backwards for same-account txs before the window.
+            boundary = bisect_left(
+                history, window_start,
+                key=lambda tx: tx.transaction_timestamp,
+            )
+            # Scan from boundary-1 backwards (all have ts < window_start)
+            for i in range(boundary - 1, -1, -1):
+                tx = history[i]
+                if (tx.customer_account == transaction.customer_account
+                        and tx.transaction_id != transaction.transaction_id):
+                    balance_before = tx.customer_account_balance
+                    break
 
         # Fallback: infer from current transaction
         if balance_before is None:

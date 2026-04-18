@@ -328,7 +328,7 @@ class TestR18RoundAmountsAnomaly:
             _make_tx(tx_id=f"TX-FAR-{i}", amount=500.0, timestamp=NOW - timedelta(hours=50 + i))
             for i in range(3)
         ]
-        result = self.rule.evaluate(_make_tx(amount=500.0), history=inside + outside)
+        result = self.rule.evaluate(_make_tx(amount=500.0), history=sorted(inside + outside, key=lambda t: t.transaction_timestamp))
         assert result.triggered is True
         assert result.details["round_tx_count"] == 3
 

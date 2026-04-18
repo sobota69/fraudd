@@ -22,6 +22,7 @@ from typing import List, Optional, Tuple
 
 from src.transaction.transaction import Transaction
 from .base_rule import BaseRule, RuleResult, Severity
+from .bisect_helpers import window_slice
 
 _MIN_HISTORY = 10
 _COVERAGE_PCT = 0.90

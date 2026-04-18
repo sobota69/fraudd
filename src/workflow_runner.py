@@ -44,6 +44,11 @@ class WorkflowRunner:
             tx = Transaction(**record)
             transactions.append(tx)
             customer_history[tx.customer_id].append(tx)
+
+        # Pre-sort each customer's history by timestamp (enables bisect in rules)
+        for cid in customer_history:
+            customer_history[cid].sort(key=lambda t: t.transaction_timestamp)
+
         print(f"Built {len(transactions)} transactions + index in {_time.perf_counter() - t0:.2f}s")
 
         for i, tx in enumerate(transactions):
