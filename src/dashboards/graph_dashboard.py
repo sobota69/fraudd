@@ -1,0 +1,599 @@
+"""Graph Dashboard – visualises Neo4j graph data from the provider.
+
+Renders interactive network graphs, entity relationship views,
+and graph-based analytics for fraud investigation.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import Any
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+from streamlit_agraph import agraph, Node, Edge, Config
+
+from src.graph.provider import Neo4jGraphProvider
+
+# ── Cypher queries for dashboard analytics ───────────────────────────────────
+
+# Customer → Beneficiary transfer network (aggregated)
+_CUSTOMER_BENEFICIARY_NETWORK = """
+MATCH (c:Customer)-[:OWNS]->(ca:CustomerAccount)-[:TRANSFER]->(t:Transaction)-[:TO]->(b:Beneficiary)
+RETURN c.customer_id AS customer_id,
+       ca.customer_account AS account,
+       b.beneficiary_account AS beneficiary,
+       b.beneficiary_country AS country,
+       count(t) AS tx_count,
+       sum(t.amount) AS total_amount,
+       avg(t.amount) AS avg_amount
+ORDER BY total_amount DESC
+LIMIT 500
+"""
+
+# High-risk transactions in the graph
+_HIGH_RISK_TRANSACTIONS = """
+MATCH (c:Customer)-[:OWNS]->(ca:CustomerAccount)-[:TRANSFER]->(t:Transaction)-[:TO]->(b:Beneficiary)
+WHERE t.risk_category IS NOT NULL AND t.risk_score > 0
+RETURN t.transaction_id AS transaction_id,
+       c.customer_id AS customer_id,
+       ca.customer_account AS account,
+       b.beneficiary_account AS beneficiary,
+       t.amount AS amount,
+       t.currency AS currency,
+       t.channel AS channel,
+       t.risk_score AS risk_score,
+       t.risk_category AS risk_category,
+       t.triggered_rules AS triggered_rules,
+       t.is_fraud_transaction AS is_fraud
+ORDER BY t.risk_score DESC
+LIMIT 200
+"""
+
+# Customer risk profile – aggregated risk per customer
+_CUSTOMER_RISK_PROFILE = """
+MATCH (c:Customer)-[:OWNS]->(ca:CustomerAccount)-[:TRANSFER]->(t:Transaction)
+WHERE t.risk_score IS NOT NULL
+RETURN c.customer_id AS customer_id,
+       count(t) AS total_transactions,
+       sum(CASE WHEN t.risk_score > 0 THEN 1 ELSE 0 END) AS flagged_transactions,
+       avg(t.risk_score) AS avg_risk_score,
+       max(t.risk_score) AS max_risk_score,
+       sum(t.amount) AS total_volume
+ORDER BY avg_risk_score DESC
+LIMIT 50
+"""
+
+# Beneficiary hotspots – beneficiaries receiving from many customers
+_BENEFICIARY_HOTSPOTS = """
+MATCH (c:Customer)-[:OWNS]->(:CustomerAccount)-[:TRANSFER]->(t:Transaction)-[:TO]->(b:Beneficiary)
+WITH b, count(DISTINCT c) AS unique_senders, count(t) AS tx_count, sum(t.amount) AS total_received
+WHERE unique_senders > 1
+RETURN b.beneficiary_account AS beneficiary,
+       b.beneficiary_country AS country,
+       unique_senders,
+       tx_count,
+       total_received
+ORDER BY unique_senders DESC
+LIMIT 30
+"""
+
+# Cross-border flow summary
+_CROSS_BORDER_FLOWS = """
+MATCH (t:Transaction)-[:TO]->(b:Beneficiary)
+WHERE b.beneficiary_country IS NOT NULL
+RETURN b.beneficiary_country AS country,
+       count(t) AS tx_count,
+       sum(t.amount) AS total_amount,
+       avg(t.amount) AS avg_amount
+ORDER BY total_amount DESC
+"""
+
+# Channel usage from graph
+_CHANNEL_RISK = """
+MATCH (t:Transaction)
+WHERE t.channel IS NOT NULL AND t.risk_score IS NOT NULL
+RETURN t.channel AS channel,
+       count(t) AS tx_count,
+       avg(t.risk_score) AS avg_risk,
+       sum(CASE WHEN t.risk_category = 'HIGH' THEN 1 ELSE 0 END) AS high_risk_count
+ORDER BY avg_risk DESC
+"""
+
+_RISK_COLOURS = {"HIGH": "#EF553B", "MEDIUM": "#FFA15A", "LOW": "#636EFA"}
+
+# ── Queries for the interactive explorer ─────────────────────────────────────
+
+_ALL_CUSTOMERS = """
+MATCH (c:Customer)
+RETURN c.customer_id AS customer_id
+ORDER BY c.customer_id
+"""
+
+_CUSTOMER_SUBGRAPH = """
+MATCH (c:Customer {customer_id: $customer_id})-[:OWNS]->(ca:CustomerAccount)-[:TRANSFER]->(t:Transaction)-[:TO]->(b:Beneficiary)
+RETURN c.customer_id        AS customer_id,
+       ca.customer_account  AS account,
+       t.transaction_id     AS tx_id,
+       t.amount             AS amount,
+       t.currency           AS currency,
+       t.channel            AS channel,
+       t.risk_score         AS risk_score,
+       t.risk_category      AS risk_category,
+       t.triggered_rules    AS triggered_rules,
+       t.is_fraud_transaction AS is_fraud,
+       t.transaction_timestamp AS ts,
+       b.beneficiary_account AS beneficiary,
+       b.beneficiary_country AS ben_country
+ORDER BY t.transaction_timestamp DESC
+"""
+
+
+def _safe_query(provider: Neo4jGraphProvider, query: str, **params) -> list[dict[str, Any]]:
+    """Run a read query, returning empty list on failure."""
+    try:
+        return provider._run_read_many(query, **params)
+    except Exception as e:
+        st.warning(f"Graph query failed: {e}")
+        return []
+
+
+# ── Neo4j-style interactive graph explorer ───────────────────────────────────
+
+_NODE_COLOURS = {
+    "Customer": "#4C8BF5",       # blue
+    "CustomerAccount": "#7B61FF", # purple
+    "Transaction": "#00B894",     # green  (default)
+    "Transaction_HIGH": "#EF553B",
+    "Transaction_MEDIUM": "#FFA15A",
+    "Transaction_LOW": "#636EFA",
+    "Beneficiary": "#E84393",     # pink
+}
+
+
+def _render_graph_explorer(provider: Neo4jGraphProvider) -> None:
+    """Interactive node explorer – select a customer, see their full sub-graph."""
+
+    st.subheader("🔎 Interactive Graph Explorer")
+    st.caption(
+        "Select a customer to visualise their accounts, transactions and beneficiaries "
+    )
+
+    # Fetch customer list
+    all_custs = _safe_query(provider, _ALL_CUSTOMERS)
+    if not all_custs:
+        st.info("No customers in the graph yet.")
+        return
+
+    cust_ids = [r["customer_id"] for r in all_custs]
+
+    col1, col2, col3 = st.columns([2, 2, 2])
+    with col1:
+        selected_cid = st.selectbox("Select customer", cust_ids, key="graph_explorer_cid")
+    with col2:
+        physics_enabled = st.checkbox("Enable physics simulation", value=True, key="graph_explorer_physics")
+    with col3:
+        graph_height = st.slider("Graph height (px)", 400, 900, 620, step=20, key="graph_explorer_h")
+
+    rows = _safe_query(provider, _CUSTOMER_SUBGRAPH, customer_id=selected_cid)
+    if not rows:
+        st.warning("No transactions found for this customer.")
+        return
+
+    # ── Build nodes & edges ──────────────────────────────────────────────────
+    nodes_map: dict[str, Node] = {}
+    edges: list[Edge] = []
+
+    # Customer node
+    cid_str = str(selected_cid)
+    nodes_map[f"cust_{cid_str}"] = Node(
+        id=f"cust_{cid_str}",
+        label=f"👤 {cid_str}",
+        size=35,
+        color=_NODE_COLOURS["Customer"],
+        font={"color": "white", "size": 14, "bold": True},
+        shape="dot",
+        title=f"Customer {cid_str}",
+    )
+
+    seen_edges: set[tuple[str, str, str]] = set()
+
+    for r in rows:
+        acc_id = f"acc_{r['account']}"
+        tx_id = f"tx_{r['tx_id']}"
+        ben_id = f"ben_{r['beneficiary']}"
+
+        # Account node
+        if acc_id not in nodes_map:
+            nodes_map[acc_id] = Node(
+                id=acc_id,
+                label=f"🏦 {str(r['account'])[-6:]}",
+                size=25,
+                color=_NODE_COLOURS["CustomerAccount"],
+                shape="dot",
+                title=f"Account: {r['account']}",
+                font={"color": "white", "size": 11},
+            )
+
+        # Transaction node – colour by risk
+        risk_cat = r.get("risk_category") or ""
+        tx_colour = _NODE_COLOURS.get(f"Transaction_{risk_cat}", _NODE_COLOURS["Transaction"])
+        risk_score = r.get("risk_score") or 0
+        amount = r.get("amount") or 0
+        tx_size = 15 + min(float(amount) / 2000, 18)
+        rules_txt = r.get("triggered_rules") or "none"
+        fraud_flag = "⚠️ FRAUD" if r.get("is_fraud") else ""
+
+        tx_title = (
+            f"TX: {r['tx_id']}\n"
+            f"Amount: £{amount:,.2f} {r.get('currency', '')}\n"
+            f"Channel: {r.get('channel', '?')}\n"
+            f"Risk: {risk_score} ({risk_cat})\n"
+            f"Rules: {rules_txt}\n"
+            f"{fraud_flag}"
+        )
+
+        if tx_id not in nodes_map:
+            nodes_map[tx_id] = Node(
+                id=tx_id,
+                label=f"💳 £{amount:,.0f}",
+                size=tx_size,
+                color=tx_colour,
+                shape="dot",
+                title=tx_title,
+                font={"color": "white", "size": 10},
+            )
+
+        # Beneficiary node
+        ben_label = str(r["beneficiary"])[-6:]
+        ben_country = r.get("ben_country") or ""
+        if ben_id not in nodes_map:
+            nodes_map[ben_id] = Node(
+                id=ben_id,
+                label=f"🏧 {ben_label}",
+                size=22,
+                color=_NODE_COLOURS["Beneficiary"],
+                shape="dot",
+                title=f"Beneficiary: {r['beneficiary']}\nCountry: {ben_country}",
+                font={"color": "white", "size": 11},
+            )
+
+        # Edges: Customer -OWNS-> Account -TRANSFER-> Transaction -TO-> Beneficiary
+        for src, tgt, lbl in [
+            (f"cust_{cid_str}", acc_id, "OWNS"),
+            (acc_id, tx_id, "TRANSFER"),
+            (tx_id, ben_id, "TO"),
+        ]:
+            key = (src, tgt, lbl)
+            if key not in seen_edges:
+                seen_edges.add(key)
+                edge_color = "#EF553B" if (lbl == "TRANSFER" and risk_cat == "HIGH") else "#888888"
+                edges.append(Edge(
+                    source=src, target=tgt, label=lbl,
+                    color=edge_color,
+                    width=2 if risk_cat == "HIGH" else 1,
+                    font={"size": 9, "color": "#666"},
+                ))
+
+    # ── Render with streamlit-agraph ─────────────────────────────────────────
+    config = Config(
+        width="100%",
+        height=graph_height,
+        directed=True,
+        physics=physics_enabled,
+        hierarchical=False,
+        nodeHighlightBehavior=True,
+        highlightColor="#F7A7A6",
+        collapsible=False,
+        node={"labelProperty": "label"},
+        link={"labelProperty": "label", "renderLabel": True},
+    )
+
+    st.markdown(
+        """
+        <style>
+        .stAgraph {border: 1px solid #333; border-radius: 8px;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    legend_cols = st.columns(5)
+    legend_cols[0].markdown("🔵 **Customer**")
+    legend_cols[1].markdown("🟣 **Account**")
+    legend_cols[2].markdown("🟢 **Transaction**")
+    legend_cols[3].markdown("🔴 **High-Risk TX**")
+    legend_cols[4].markdown("🩷 **Beneficiary**")
+
+    agraph(
+        nodes=list(nodes_map.values()),
+        edges=edges,
+        config=config,
+    )
+
+    # ── Transaction detail table below the graph ─────────────────────────────
+    with st.expander(f"📋 All transactions for customer {selected_cid} ({len(rows)} rows)", expanded=False):
+        detail_df = pd.DataFrame(rows)
+        display = [c for c in [
+            "tx_id", "amount", "currency", "channel", "risk_score",
+            "risk_category", "triggered_rules", "beneficiary", "ben_country", "ts",
+        ] if c in detail_df.columns]
+
+        # Filters
+        fc1, fc2, fc3 = st.columns(3)
+        with fc1:
+            ben_opts = ["All"] + sorted(detail_df["beneficiary"].dropna().unique().tolist())
+            ben_selected = st.selectbox(
+                "Filter by beneficiary", options=ben_opts, index=0,
+                key="explorer_ben_filter",
+            )
+        with fc2:
+            risk_opts = sorted(detail_df["risk_category"].dropna().unique().tolist())
+            risk_filter = st.multiselect(
+                "Filter by risk level", options=risk_opts, default=risk_opts,
+                key="explorer_risk_filter",
+            )
+        with fc3:
+            channel_opts = sorted(detail_df["channel"].dropna().unique().tolist())
+            channel_filter = st.multiselect(
+                "Filter by channel", options=channel_opts, default=channel_opts,
+                key="explorer_channel_filter",
+            )
+
+        mask = detail_df["beneficiary"].isin([ben_selected]) if ben_selected != "All" else pd.Series(True, index=detail_df.index)
+        if risk_filter:
+            mask = mask & detail_df["risk_category"].fillna("").isin(risk_filter)
+        if channel_filter:
+            mask = mask & detail_df["channel"].fillna("").isin(channel_filter)
+        filtered = detail_df[mask]
+
+        st.caption(f"Showing {len(filtered)} of {len(detail_df)} transactions")
+
+        def _colour_risk(val):
+            c = _RISK_COLOURS.get(val, "")
+            return f"background-color: {c}; color: white; font-weight: bold" if c else ""
+
+        st.dataframe(
+            filtered[display].style.map(_colour_risk, subset=["risk_category"]),
+            use_container_width=True,
+            height=350,
+        )
+
+
+def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
+    """Render graph-based analytics dashboard."""
+
+    st.header("🕸️ Graph Intelligence Dashboard")
+    st.caption("Insights derived from the Neo4j transaction graph")
+
+    # ── 1. Network overview metrics ──────────────────────────────────────────
+    network_data = _safe_query(provider, _CUSTOMER_BENEFICIARY_NETWORK)
+    risk_data = _safe_query(provider, _HIGH_RISK_TRANSACTIONS)
+    customer_profiles = _safe_query(provider, _CUSTOMER_RISK_PROFILE)
+    hotspots = _safe_query(provider, _BENEFICIARY_HOTSPOTS)
+    country_flows = _safe_query(provider, _CROSS_BORDER_FLOWS)
+    channel_risk = _safe_query(provider, _CHANNEL_RISK)
+
+    if not network_data:
+        st.info("No graph data available. Upload and process transactions first.")
+        return
+
+    net_df = pd.DataFrame(network_data)
+
+    # ── 1. Customer Risk Profiles ────────────────────────────────────────────
+    if customer_profiles:
+        st.subheader("👤 Customer Risk Profiles (from Graph)")
+        prof_df = pd.DataFrame(customer_profiles)
+
+        v1, v2 = st.columns(2)
+        with v1:
+            fig = px.scatter(
+                prof_df, x="total_volume", y="avg_risk_score",
+                size="flagged_transactions", color="max_risk_score",
+                hover_data=["customer_id", "total_transactions"],
+                title="Customer Risk vs Transaction Volume",
+                color_continuous_scale="OrRd",
+                labels={"total_volume": "Total Volume (£)", "avg_risk_score": "Avg Risk Score"},
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with v2:
+            top_risky = prof_df.nlargest(15, "avg_risk_score")
+            top_risky["customer_id"] = top_risky["customer_id"].astype(str)
+            fig = px.bar(
+                top_risky, x="customer_id", y="avg_risk_score",
+                color="flagged_transactions", color_continuous_scale="Reds",
+                title="Top 15 Riskiest Customers",
+                labels={"avg_risk_score": "Avg Risk Score"},
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Top 15 riskiest customers table
+        st.markdown("**Top 15 Riskiest Customers**")
+        table_df = prof_df.nlargest(15, "avg_risk_score").reset_index(drop=True)
+        table_df.index = table_df.index + 1
+        renamed = {c: c.replace("_", " ").title() for c in table_df.columns}
+        table_df = table_df.rename(columns=renamed)
+        fmt = {k: v for k, v in {"Avg Risk Score": "{:.2f}", "Max Risk Score": "{:.2f}", "Total Volume": "£{:,.0f}"}.items() if k in table_df.columns}
+        bar_cols = [c for c in ["Avg Risk Score", "Max Risk Score"] if c in table_df.columns]
+        styled_table = table_df.style.format(fmt)
+        for col in bar_cols:
+            styled_table = styled_table.bar(subset=[col], color="#EF553B80")
+        st.dataframe(styled_table, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Interactive Neo4j-style explorer ─────────────────────────────────────
+    _render_graph_explorer(provider)
+    st.markdown("---")
+
+    # Key graph metrics
+    st.subheader("📊 Graph Overview")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Unique Customers", f"{net_df['customer_id'].nunique():,}")
+    m2.metric("Unique Beneficiaries", f"{net_df['beneficiary'].nunique():,}")
+    m3.metric("Transfer Links", f"{len(net_df):,}")
+    m4.metric("Total Volume", f"£{net_df['total_amount'].sum():,.0f}")
+
+    st.markdown("---")
+
+    # ── 2. Interactive transfer network (Plotly scatter-based) ────────────────
+    st.subheader("🔗 Customer → Beneficiary Transfer Network")
+
+    # Build a force-layout-style visualization using node positions
+    customers = net_df["customer_id"].unique().tolist()
+    beneficiaries = net_df["beneficiary"].unique().tolist()
+
+    all_nodes = []
+    node_x, node_y = [], []
+    node_text, node_color, node_size = [], [], []
+
+    # Place customers in a circle on the left
+    for i, cid in enumerate(customers):
+        angle = 2 * math.pi * i / max(len(customers), 1)
+        x = -2 + math.cos(angle) * 1.5
+        y = math.sin(angle) * 1.5
+        all_nodes.append(("customer", str(cid), x, y))
+        node_x.append(x)
+        node_y.append(y)
+        cust_total = net_df[net_df["customer_id"] == cid]["total_amount"].sum()
+        node_text.append(f"Customer {cid}<br>Volume: £{cust_total:,.0f}")
+        node_color.append("#636EFA")
+        node_size.append(12 + min(cust_total / 5000, 20))
+
+    # Place beneficiaries in a circle on the right
+    for i, bid in enumerate(beneficiaries):
+        angle = 2 * math.pi * i / max(len(beneficiaries), 1)
+        x = 2 + math.cos(angle) * 1.5
+        y = math.sin(angle) * 1.5
+        all_nodes.append(("beneficiary", bid, x, y))
+        node_x.append(x)
+        node_y.append(y)
+        ben_total = net_df[net_df["beneficiary"] == bid]["total_amount"].sum()
+        node_text.append(f"Beneficiary {bid[:12]}…<br>Received: £{ben_total:,.0f}")
+        node_color.append("#EF553B")
+        node_size.append(10 + min(ben_total / 5000, 18))
+
+    # Build node index map
+    node_map = {(n[0], n[1]): idx for idx, n in enumerate(all_nodes)}
+
+    edge_x, edge_y = [], []
+    for _, row in net_df.iterrows():
+        src_idx = node_map.get(("customer", str(row["customer_id"])))
+        tgt_idx = node_map.get(("beneficiary", row["beneficiary"]))
+        if src_idx is not None and tgt_idx is not None:
+            edge_x += [node_x[src_idx], node_x[tgt_idx], None]
+            edge_y += [node_y[src_idx], node_y[tgt_idx], None]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=edge_x, y=edge_y, mode="lines",
+        line=dict(width=0.5, color="#888"), hoverinfo="none",
+    ))
+    fig.add_trace(go.Scatter(
+        x=node_x, y=node_y, mode="markers+text",
+        marker=dict(size=node_size, color=node_color, line=dict(width=1, color="white")),
+        text=[n[1][:8] for n in all_nodes],
+        textposition="top center", textfont=dict(size=8),
+        hovertext=node_text, hoverinfo="text",
+    ))
+    fig.update_layout(
+        title="Transfer Network (🔵 Customers → 🔴 Beneficiaries)",
+        showlegend=False, hovermode="closest",
+        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+        height=500,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── 4. Beneficiary Hotspots ──────────────────────────────────────────────
+    if hotspots:
+        st.subheader("🎯 Beneficiary Hotspots (Multiple Senders)")
+        hs_df = pd.DataFrame(hotspots)
+
+        fig = px.treemap(
+            hs_df, path=["country", "beneficiary"], values="total_received",
+            color="unique_senders", color_continuous_scale="YlOrRd",
+            title="Beneficiaries by Country & Incoming Volume (colour = # unique senders)",
+        )
+        fig.update_layout(height=450)
+        st.plotly_chart(fig, use_container_width=True)
+
+        with st.expander("Hotspot details"):
+            st.dataframe(hs_df, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── 5. Cross-Border Flow Map ─────────────────────────────────────────────
+    if country_flows:
+        st.subheader("🌍 Cross-Border Transaction Flows")
+        cf_df = pd.DataFrame(country_flows)
+
+        v1, v2 = st.columns(2)
+        with v1:
+            fig = px.choropleth(
+                cf_df, locations="country", locationmode="ISO-3",
+                color="total_amount", hover_data=["tx_count", "avg_amount"],
+                title="Transaction Volume by Destination Country",
+                color_continuous_scale="Viridis",
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with v2:
+            fig = px.bar(
+                cf_df.nlargest(15, "total_amount"),
+                x="country", y="total_amount", color="tx_count",
+                title="Top 15 Destination Countries by Volume",
+                color_continuous_scale="Blues",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── 6. Channel Risk Analysis ─────────────────────────────────────────────
+    if channel_risk:
+        st.subheader("📡 Channel Risk Analysis (Graph)")
+        ch_df = pd.DataFrame(channel_risk)
+
+        v1, v2 = st.columns(2)
+        with v1:
+            fig = px.bar(
+                ch_df, x="channel", y="avg_risk",
+                color="high_risk_count", color_continuous_scale="OrRd",
+                title="Average Risk Score by Channel",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with v2:
+            fig = px.scatter(
+                ch_df, x="tx_count", y="avg_risk", size="high_risk_count",
+                text="channel", title="Channel: Volume vs Risk",
+                color_discrete_sequence=["#636EFA"],
+            )
+            fig.update_traces(textposition="top center")
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ── 7. High-Risk Transaction Explorer ────────────────────────────────────
+    if risk_data:
+        st.markdown("---")
+        st.subheader("🚨 High-Risk Transactions (from Graph)")
+        risk_df = pd.DataFrame(risk_data)
+
+        def _highlight_risk(val):
+            colour = _RISK_COLOURS.get(val, "")
+            return f"background-color: {colour}; color: white; font-weight: bold" if colour else ""
+
+        display_cols = [c for c in [
+            "transaction_id", "customer_id", "beneficiary", "amount",
+            "risk_score", "risk_category", "triggered_rules", "channel",
+        ] if c in risk_df.columns]
+
+        styled = risk_df[display_cols].style.map(
+            _highlight_risk, subset=["risk_category"]
+        )
+        st.dataframe(styled, use_container_width=True, height=400)

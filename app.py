@@ -3,8 +3,10 @@
 import streamlit as st
 import pandas as pd
 
-from src.dashboard_assembler import render_alert_dashboard
-from src.other_metrics_dashboard_assembler import render_other_metrics
+from src.dashboards.dashboard_assembler import render_alert_dashboard
+from src.dashboards.other_metrics_dashboard_assembler import render_other_metrics
+from src.dashboards.graph_dashboard import render_graph_dashboard
+from src.graph.provider import Neo4jGraphProvider
 from src.workflow_runner import WorkflowRunner
 
 
@@ -35,6 +37,15 @@ render_alert_dashboard(wf_result)
 
 # ── Other metrics & visualisations ───────────────────────────────────────────
 render_other_metrics(df)
+
+# ── Graph Intelligence Dashboard ─────────────────────────────────────────────
+try:
+    with Neo4jGraphProvider() as graph:
+        render_graph_dashboard(graph)
+except Exception as e:
+    import traceback
+    st.info(f"⚠️ Graph database not available – skipping graph dashboard.\n\n`{e}`")
+    st.code(traceback.format_exc())
 
 # ── Footer ───────────────────────────────────────────────────────────────────
 st.markdown("---")
