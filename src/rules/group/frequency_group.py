@@ -112,4 +112,31 @@ class FrequencyGroup:
             } if r17_triggered else {},
         ))
 
+        # ── R18 – Round Amounts Anomaly ───────────────────────────────────
+        _R18_WINDOW_HOURS = 48
+        _R18_THRESHOLD = 3
+
+        r18_window_start = transaction.transaction_timestamp - timedelta(hours=_R18_WINDOW_HOURS)
+        round_tx_count = sum(
+            1 for tx in (history or [])
+            if tx.transaction_id != transaction.transaction_id
+            and tx.customer_id == transaction.customer_id
+            and tx.transaction_timestamp >= r18_window_start
+            and tx.transaction_timestamp < transaction.transaction_timestamp
+            and tx.amount % 10 == 0
+        )
+
+        r18_triggered = round_tx_count >= _R18_THRESHOLD
+        results.append(RuleResult(
+            rule_id="R18",
+            rule_name="Round Amounts Anomaly",
+            triggered=r18_triggered,
+            severity=Severity.STRONG if r18_triggered else None,
+            weight=3,
+            details={
+                "round_tx_count_last_48h": round_tx_count,
+                "threshold": _R18_THRESHOLD,
+            } if r18_triggered else {},
+        ))
+
         return results
