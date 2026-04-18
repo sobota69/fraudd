@@ -145,10 +145,10 @@ def _safe_query(provider: Neo4jGraphProvider, query: str, **params) -> list[dict
 _NODE_COLOURS = {
     "Customer": "#4C8BF5",       # blue
     "CustomerAccount": "#7B61FF", # purple
-    "Transaction": "#00B894",     # green  (default)
-    "Transaction_HIGH": "#EF553B",
-    "Transaction_MEDIUM": "#FFA15A",
-    "Transaction_LOW": "#636EFA",
+    "Transaction": "#00B894",     # green  (default / no risk)
+    "Transaction_HIGH": "#EF553B", # red
+    "Transaction_MEDIUM": "#FFA15A", # orange
+    "Transaction_LOW": "#00B894",  # green
     "Beneficiary": "#E84393",     # pink
 }
 
@@ -300,12 +300,13 @@ def _render_graph_explorer(provider: Neo4jGraphProvider) -> None:
         unsafe_allow_html=True,
     )
 
-    legend_cols = st.columns(5)
-    legend_cols[0].markdown("🔵 **Customer**")
-    legend_cols[1].markdown("🟣 **Account**")
-    legend_cols[2].markdown("🟢 **Transaction**")
-    legend_cols[3].markdown("🔴 **High-Risk TX**")
-    legend_cols[4].markdown("🩷 **Beneficiary**")
+    legend_cols = st.columns(6)
+    legend_cols[0].markdown('<span style="color:#4C8BF5">⬤</span> **Customer**', unsafe_allow_html=True)
+    legend_cols[1].markdown('<span style="color:#7B61FF">⬤</span> **Account**', unsafe_allow_html=True)
+    legend_cols[2].markdown('<span style="color:#00B894">⬤</span> **Transaction**', unsafe_allow_html=True)
+    legend_cols[3].markdown('<span style="color:#EF553B">⬤</span> **High-Risk TX**', unsafe_allow_html=True)
+    legend_cols[4].markdown('<span style="color:#FFA15A">⬤</span> **Medium-Risk TX**', unsafe_allow_html=True)
+    legend_cols[5].markdown('<span style="color:#E84393">⬤</span> **Beneficiary**', unsafe_allow_html=True)
 
     agraph(
         nodes=list(nodes_map.values()),

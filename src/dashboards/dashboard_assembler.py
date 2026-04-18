@@ -9,6 +9,7 @@ Implements the HACKATHON_ALERT DASHBOARD requirements:
 
 from __future__ import annotations
 
+from io import BytesIO
 from typing import List
 
 import pandas as pd
@@ -195,7 +196,41 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
     st.markdown("---")
 
     # ── 3. Transaction Alert List (mandatory) ─────────────────────────────────
-    st.subheader(f"🚨 Transaction Alert List ({len(filtered_df):,} alerts)")
+    st.subheader(f"🚨 Transaction Alert List ({len(filtered_df):,} of {len(alerts_df):,} alerts)")
+
+    # Export to Excel
+    export_buffer = BytesIO()
+    export_df = filtered_df.copy()
+    for col in export_df.select_dtypes(include=["datetimetz"]).columns:
+        export_df[col] = export_df[col].dt.tz_localize(None)
+    export_df.to_excel(export_buffer, index=False, sheet_name="Alerts")
+    export_buffer.seek(0)
+    st.download_button(
+        label="📥 Export to Excel",
+        data=export_buffer,
+        file_name="filtered_alerts.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+    # Show active filters summary
+    active_filters = []
+    if set(risk_filter) != {"HIGH", "MEDIUM", "LOW"}:
+        active_filters.append(f"**Risk:** {', '.join(risk_filter)}")
+    if len(rule_filter) < len(alerts_df["rule_id"].unique()):
+        active_filters.append(f"**Rules:** {', '.join(rule_filter)}")
+    if len(channel_filter) < len(alerts_df["channel"].unique()):
+        active_filters.append(f"**Channel:** {', '.join(channel_filter)}")
+    if fraud_filter != "All":
+        active_filters.append(f"**Fraud:** {fraud_filter}")
+    if amount_range != (min_amount, max_amount):
+        active_filters.append(f"**Amount:** {amount_range[0]:,.0f} – {amount_range[1]:,.0f}")
+    if sort_col != "risk_score" or sort_asc:
+        active_filters.append(f"**Sort:** {sort_col} ({'↑' if sort_asc else '↓'})")
+
+    if active_filters:
+        st.caption("Active filters: " + "  •  ".join(active_filters))
+    else:
+        st.caption("No filters applied — showing all alerts")
 
     # Styled dataframe with colour-coded risk level
     display_cols = [
@@ -295,3 +330,83 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
             )
             fig.update_layout(xaxis_title="Date", yaxis_title="# Alerts")
             st.plotly_chart(fig, use_container_width=True)
+
+    # ── 5. Fraud Analysis ────────────────────────────────────────────────────
+    if "is_fraud" in filtered_df.columns:
+        fraud_txs = filtered_df[filtered_df["is_fraud"] == True].drop_duplicates("transaction_id")
+        if not fraud_txs.empty:
+            st.markdown("---")
+            st.subheader("🚨 Fraud Analysis")
+
+            v1, v2 = st.columns(2)
+
+            # Fraud transactions per customer
+            with v1:
+                fraud_per_cust = (
+                    fraud_txs.groupby("customer_id")
+                    .size()
+                    .reset_index(name="fraud_count")
+                    .sort_values("fraud_count", ascending=False)
+                )
+                fraud_per_cust["customer_id"] = fraud_per_cust["customer_id"].astype(str)
+                fig = px.bar(
+                    fraud_per_cust,
+                    x="customer_id",
+                    y="fraud_count",
+                    title="Fraud Transactions per Customer (Top 20)",
+                    color="fraud_count",
+                    color_continuous_scale="Reds",
+                )
+                fig.update_layout(xaxis_title="Customer ID", yaxis_title="# Fraud Transactions")
+                st.plotly_chart(fig, use_container_width=True)
+
+            # Fraud transactions over time
+            with v2:
+                if "timestamp" in fraud_txs.columns:
+                    fraud_trend = fraud_txs.copy()
+                    fraud_trend["date"] = pd.to_datetime(fraud_trend["timestamp"]).dt.date
+                    daily_fraud = fraud_trend.groupby("date").size().reset_index(name="fraud_count")
+                    fig = px.line(
+                        daily_fraud,
+                        x="date",
+                        y="fraud_count",
+                        title="Fraud Transactions Over Time",
+                        markers=True,
+                        color_discrete_sequence=["#EF553B"],
+                    )
+                    fig.update_layout(xaxis_title="Date", yaxis_title="# Fraud Transactions")
+                    st.plotly_chart(fig, use_container_width=True)
+
+            # Fraud clients table
+            st.markdown("**Clients with Fraud Detected**")
+            # Count total transactions per customer from full dataset
+            all_tx_counts = pd.Series(
+                [tx.customer_id for tx in result.transactions]
+            ).value_counts().rename("total_tx_count")
+
+            deduped = filtered_df.drop_duplicates("transaction_id")
+            per_client = (
+                deduped.groupby("customer_id")
+                .agg(
+                    alert_count=("transaction_id", "count"),
+                    fraud_transactions=("is_fraud", lambda s: int(s.sum())),
+                )
+                .reset_index()
+            )
+            per_client = per_client[per_client["fraud_transactions"] > 0].copy()
+            per_client["total_transactions"] = per_client["customer_id"].map(all_tx_counts).fillna(0).astype(int)
+            per_client["non_fraud"] = per_client["alert_count"] - per_client["fraud_transactions"]
+            per_client["fraud_%"] = (per_client["fraud_transactions"] / per_client["total_transactions"] * 100).round(1)
+            per_client = per_client.sort_values("fraud_transactions", ascending=False).reset_index(drop=True)
+            per_client.index = per_client.index + 1
+            per_client = per_client[["customer_id", "total_transactions", "alert_count", "fraud_transactions", "non_fraud", "fraud_%"]]
+            per_client = per_client.rename(columns={
+                "customer_id": "Customer ID",
+                "total_transactions": "Total Transactions",
+                "alert_count": "Total Alerts",
+                "fraud_transactions": "Fraud",
+                "non_fraud": "Non-Fraud",
+                "fraud_%": "Fraud %",
+            })
+            styled_fraud = per_client.style.bar(subset=["Fraud %"], color="#EF553B80").format({"Fraud %": "{:.1f}%"})
+            st.dataframe(styled_fraud, use_container_width=True)
