@@ -32,6 +32,15 @@ if _cache_key not in st.session_state:
         st.session_state[_cache_key] = WorkflowRunner().run_process_list(df)
 wf_result = st.session_state[_cache_key]
 
+# ── Risk assessments download ────────────────────────────────────────────────
+if wf_result.risk_csv:
+    st.sidebar.download_button(
+        label="📥 Download Risk Assessments",
+        data=wf_result.risk_csv,
+        file_name="risk_assessments.csv",
+        mime="text/csv",
+    )
+
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 tab_alerts, tab_graph, tab_explore, tab_quality = st.tabs([
     "🛡️ Alert Dashboard",

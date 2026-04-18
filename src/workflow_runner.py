@@ -17,6 +17,7 @@ class WorkflowResult:
     assessments: list
     rule_results: list          # list[list[RuleResult]], one inner list per tx
     elapsed: float              # seconds
+    risk_csv: bytes = b""       # risk_assessments.csv content
 
 
 class WorkflowRunner:
@@ -86,7 +87,9 @@ class WorkflowRunner:
         ]
 
         elapsed = _time.perf_counter() - total_start
-        pd.DataFrame(rows).to_csv(output_file, index=False)
+        risk_df = pd.DataFrame(rows)
+        risk_csv_bytes = risk_df.to_csv(index=False).encode("utf-8")
+        risk_df.to_csv(output_file, index=False)  # also keep local copy
         print(f"\n✅ All {len(df)} transactions processed in {elapsed:.2f}s")
 
         return WorkflowResult(
@@ -94,4 +97,5 @@ class WorkflowRunner:
             assessments=risk_assessments,
             rule_results=all_rule_results,
             elapsed=elapsed,
+            risk_csv=risk_csv_bytes,
         )
