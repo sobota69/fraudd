@@ -49,6 +49,7 @@ def _build_alerts_df(result: WorkflowResult) -> pd.DataFrame:
                         "rule_name": rr.rule_name,
                         "severity": rr.severity.name if rr.severity else "",
                         "weight": rr.weight,
+                        "is_fraud": assessment.is_fraud_transaction,
                         "explanation": _build_explanation(rr),
                     }
                 )
@@ -102,11 +103,18 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
         ["HIGH", "MEDIUM", "LOW"], fill_value=0
     )
 
-    m1, m2, m3, m4 = st.columns(4)
+    if "is_fraud" in risk_df.columns:
+        fraud_col = risk_df["is_fraud"].map({"True": True, "False": False, True: True, False: False}).fillna(False)
+        fraud_count = int(fraud_col.sum())
+    else:
+        fraud_count = 0
+
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Total Alerts", f"{len(flagged):,}")
-    m2.metric(f"{_SEVERITY_ICON['HIGH']} High", f"{risk_counts.get('HIGH', 0):,}")
-    m3.metric(f"{_SEVERITY_ICON['MEDIUM']} Medium", f"{risk_counts.get('MEDIUM', 0):,}")
-    m4.metric(f"{_SEVERITY_ICON['LOW']} Low", f"{risk_counts.get('LOW', 0):,}")
+    m2.metric("🚨 Fraud", f"{fraud_count:,}")
+    m3.metric(f"{_SEVERITY_ICON['HIGH']} High", f"{risk_counts.get('HIGH', 0):,}")
+    m4.metric(f"{_SEVERITY_ICON['MEDIUM']} Medium", f"{risk_counts.get('MEDIUM', 0):,}")
+    m5.metric(f"{_SEVERITY_ICON['LOW']} Low", f"{risk_counts.get('LOW', 0):,}")
 
     # Number of triggered rules
     st.markdown("**Triggers per rule:**")
@@ -128,7 +136,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
 
     # ── 2. Filtering & Sorting ───────────────────────────────────────────────
     st.subheader("🔍 Filters")
-    f1, f2, f3, f4 = st.columns(4)
+    f1, f2, f3, f4, f5 = st.columns(5)
 
     with f1:
         risk_filter = st.multiselect(
@@ -146,6 +154,8 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
         channel_opts = sorted(alerts_df["channel"].unique())
         channel_filter = st.multiselect("Channel", options=channel_opts, default=channel_opts)
     with f4:
+        fraud_filter = st.selectbox("Fraud", options=["All", "Fraud only", "Non-fraud only"], index=0)
+    with f5:
         min_amount, max_amount = float(alerts_df["amount"].min()), float(
             alerts_df["amount"].max()
         )
@@ -163,6 +173,12 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
     )
     sort_asc = st.checkbox("Ascending", value=False)
 
+    # Normalise is_fraud to bool
+    if "is_fraud" in alerts_df.columns:
+        alerts_df["is_fraud"] = alerts_df["is_fraud"].map({"True": True, "False": False, True: True, False: False}).fillna(False)
+    else:
+        alerts_df["is_fraud"] = False
+
     # Apply filters
     mask = (
         alerts_df["risk_level"].isin(risk_filter)
@@ -170,6 +186,10 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
         & alerts_df["channel"].isin(channel_filter)
         & alerts_df["amount"].between(*amount_range)
     )
+    if fraud_filter == "Fraud only":
+        mask = mask & alerts_df["is_fraud"]
+    elif fraud_filter == "Non-fraud only":
+        mask = mask & ~alerts_df["is_fraud"]
     filtered_df = alerts_df[mask].sort_values(sort_col, ascending=sort_asc)
 
     st.markdown("---")
@@ -187,6 +207,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
         "channel",
         "risk_score",
         "risk_level",
+        "is_fraud",
         "rule_id",
         "rule_name",
         "explanation",

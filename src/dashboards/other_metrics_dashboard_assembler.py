@@ -9,10 +9,9 @@ import streamlit as st
 from src.data_loader import analyse_dataframe
 
 
-def render_other_metrics(df: pd.DataFrame) -> None:
-    """Render file analysis, smart visualisations and data overview sections."""
+def render_data_quality(df: pd.DataFrame) -> None:
+    """Render uploaded file analysis and data quality checks."""
 
-    # ── Uploaded file analysis ────────────────────────────────────────────────
     st.header("🔎 Uploaded File Analysis")
     analysis = analyse_dataframe(df)
 
@@ -59,8 +58,21 @@ def render_other_metrics(df: pd.DataFrame) -> None:
                          title="Missing Values by Column")
             st.plotly_chart(fig, width='stretch')
 
-    # ── Smart visualisations ──────────────────────────────────────────────────
-    st.header("📈 Data Visualisations")
+    # Data overview
+    st.markdown("---")
+    st.header("📊 Data Overview")
+    col1, col2 = st.columns(2)
+    col1.metric("Total transactions", f"{len(df):,}")
+    col2.metric("Columns", f"{len(df.columns):,}")
+
+    with st.expander("Show raw data sample"):
+        st.dataframe(df.head(100))
+
+
+def render_data_exploration(df: pd.DataFrame) -> None:
+    """Render smart visualisations for transaction data exploration."""
+
+    st.header("📈 Data Exploration")
 
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
     datetime_cols = []
@@ -215,13 +227,3 @@ def render_other_metrics(df: pd.DataFrame) -> None:
 
     # Clean up temp columns
     df.drop(columns=[c for c in df.columns if c.startswith("_")], inplace=True, errors="ignore")
-
-    # ── Data overview ─────────────────────────────────────────────────────────
-    st.markdown("---")
-    st.header("📊 Data Overview")
-    col1, col2 = st.columns(2)
-    col1.metric("Total transactions", f"{len(df):,}")
-    col2.metric("Columns", f"{len(df.columns):,}")
-
-    with st.expander("Show raw data sample"):
-        st.dataframe(df.head(100))

@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 
 from src.dashboards.dashboard_assembler import render_alert_dashboard
-from src.dashboards.other_metrics_dashboard_assembler import render_other_metrics
+from src.dashboards.other_metrics_dashboard_assembler import render_data_quality, render_data_exploration
 from src.dashboards.graph_dashboard import render_graph_dashboard
 from src.graph.provider import Neo4jGraphProvider
 from src.workflow_runner import WorkflowRunner
@@ -20,7 +20,7 @@ uploaded_file = st.sidebar.file_uploader("Upload a transactions CSV", type=["csv
 
 # ── Data loading ─────────────────────────────────────────────────────────────
 if uploaded_file is None:
-    st.info("👈 Upload a CSV file to get started.")
+    st.info("� Upload a CSV file to get started.")
     st.stop()
 
 df = pd.read_csv(uploaded_file)
@@ -32,21 +32,32 @@ if _cache_key not in st.session_state:
         st.session_state[_cache_key] = WorkflowRunner().run_process_list(df)
 wf_result = st.session_state[_cache_key]
 
-# ── FRAML Alert Dashboard (top of page) ──────────────────────────────────────
-render_alert_dashboard(wf_result)
+# ── Tabs ─────────────────────────────────────────────────────────────────────
+tab_alerts, tab_graph, tab_explore, tab_quality = st.tabs([
+    "🛡️ Alert Dashboard",
+    "🕸️ Graph Intelligence",
+    "📈 Data Exploration",
+    "🔎 Data Quality",
+])
 
-# ── Other metrics & visualisations ───────────────────────────────────────────
-render_other_metrics(df)
+with tab_alerts:
+    render_alert_dashboard(wf_result)
 
-# ── Graph Intelligence Dashboard ─────────────────────────────────────────────
-try:
-    with Neo4jGraphProvider() as graph:
-        render_graph_dashboard(graph)
-except Exception as e:
-    import traceback
-    st.info(f"⚠️ Graph database not available – skipping graph dashboard.\n\n`{e}`")
-    st.code(traceback.format_exc())
+with tab_graph:
+    try:
+        with Neo4jGraphProvider() as graph:
+            render_graph_dashboard(graph)
+    except Exception as e:
+        import traceback
+        st.info(f"⚠️ Graph database not available – skipping graph dashboard.\n\n`{e}`")
+        st.code(traceback.format_exc())
+
+with tab_explore:
+    render_data_exploration(df)
+
+with tab_quality:
+    render_data_quality(df)
 
 # ── Footer ───────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.caption("Fraud Detection Dashboard • Built with Streamlit, XGBoost & scikit-learn")
+st.caption("Fraud Detection Dashboard • Built with Streamlit")
