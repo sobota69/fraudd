@@ -10,7 +10,7 @@ from src.risk.risk_calculator import RiskAssessment
 from src.transaction.transaction import Transaction
 #from .model import ClientActivityWindow, CountryStat, Transaction, TransactionSummary
 from .cypher_commands import COUNT_CLIENT_TRANSACTIONS_SINCE_CYPHER, DELETE_ALL_NODES, DROP_SCHEMA_STATEMENTS, GET_CLIENT_ACTIVITY_WINDOW_CYPHER, GET_CLIENT_AVG_AMOUNT_CYPHER, UPDATE_TRANSACTION_ASSESSMENT
-from .cypher_commands import GET_CLIENT_TRANSACTION_COUNTRIES_CYPHER, GET_CLIENT_TRANSACTIONS_BY_PROPERTY, GET_PREVIOUS_TRANSACTION_CYPHER, SCHEMA_CONSTRAINTS, SCHEMA_INDEXES_OPTIONAL, SCHEMA_INDEXES_REQUIRED, UPSERT_TRANSACTION_CYPHER
+from .cypher_commands import GET_CLIENT_TRANSACTION_COUNTRIES_CYPHER, GET_CLIENT_TRANSACTIONS_BY_PROPERTY, GET_PREVIOUS_TRANSACTION_CYPHER, SCHEMA_CONSTRAINTS, SCHEMA_INDEXES_OPTIONAL, SCHEMA_INDEXES_REQUIRED, UPSERT_TRANSACTIONS_CYPHER
 
 
 class Neo4jGraphProvider:
@@ -121,11 +121,14 @@ class Neo4jGraphProvider:
     # Writes
     # -------------------------------------------------------------------------
 
-    def save_transaction(self, tx: Transaction) -> None:
-        self._run_write(UPSERT_TRANSACTION_CYPHER, tx=tx)
+    def save_transactions(self, transactions: Sequence[Transaction]) -> None:
+        batch: list[dict[str, Any]] = []
+        for tx in transactions:
+            batch.append(self._to_graph_row_transaction(tx))
+        self._run_write(UPSERT_TRANSACTIONS_CYPHER, transactions=batch)
 
-    def update_risk_assesment(self, tx: Transaction, assessment: RiskAssessment):
-        self._run_write(UPDATE_TRANSACTION_ASSESSMENT, tx_id=tx.transaction_id, assessment = assessment)
+    def update_risk_assesment(self, assessment: RiskAssessment):
+        self._run_write(UPDATE_TRANSACTION_ASSESSMENT, ass = self._to_graph_row_assessment(assessment))
 
     # # -------------------------------------------------------------------------
     # # Reads / rule queries
@@ -323,42 +326,35 @@ class Neo4jGraphProvider:
     #     if tx.customer_account_balance is None:
     #         raise ValueError("customer_account_balance is required")
 
-    # def _to_graph_row(self, tx: Transaction) -> dict[str, Any]:
-    #     transaction_timestamp = self._ensure_aware_datetime(tx.transaction_timestamp)
-    #     customer_account = self._normalize_account(tx.customer_account)
-    #     beneficiary_account = self._normalize_account(tx.beneficiary_account)
-    #     device_id = self._normalize_device_id(tx.device_id)
-    #     channel = self._normalize_channel(tx.channel)
-    #     currency = self._normalize_currency(tx.currency)
+    def _to_graph_row_transaction(self, tx: Transaction) -> dict[str, Any]:        
+        return {
+            "transaction_id": tx.transaction_id,
+            "transaction_timestamp": tx.transaction_timestamp,
+            "customer_id": tx.customer_id,
+            "customer_account": tx.customer_account,
+            "channel": tx.channel,
+            "device_id": tx.device_id,
+            "amount": tx.amount,
+            "currency": tx.currency,
+            "is_new_beneficiary": tx.is_new_beneficiary,
+            "beneficiary_account": tx.beneficiary_account,
+            "entered_beneficiary_name": tx.entered_beneficiary_name,
+            "official_beneficiary_account_name": tx.official_beneficiary_account_name,
+            "customer_account_balance": tx.customer_account_balance,
+            "beneficiary_country": tx.beneficiary_country,
+            "transaction_day_of_week": tx.transaction_day_of_week,
+            "transaction_hour_of_day": tx.transaction_hour_of_day,
+        }
+    
+    def _to_graph_row_assessment(self, ass: RiskAssessment) -> dict[str, Any]:        
+        return {
+            "transaction_id" : ass.transaction_id,
+            "triggered_rules" : ass.triggered_rules,
+            "is_fraud_transaction" : ass.is_fraud_transaction,
+            "risk_score" : ass.risk_score,
+            "risk_category" : ass.risk_category
+        }
 
-    #     beneficiary_country = (
-    #         tx.beneficiary_country.strip().upper()
-    #         if tx.beneficiary_country
-    #         else self._derive_beneficiary_country(beneficiary_account)
-    #     )
-
-    #     return {
-    #         "transaction_id": tx.transaction_id.strip(),
-    #         "transaction_timestamp": transaction_timestamp,
-    #         "customer_id": int(tx.customer_id),
-    #         "customer_account": customer_account,
-    #         "channel": channel,
-    #         "device_id": device_id,
-    #         "amount": float(tx.amount),
-    #         "currency": currency,
-    #         "is_new_beneficiary": bool(tx.is_new_beneficiary),
-    #         "beneficiary_account": beneficiary_account,
-    #         "entered_beneficiary_name": (tx.entered_beneficiary_name or "").strip(),
-    #         "official_beneficiary_account_name": (
-    #             tx.official_beneficiary_account_name.strip()
-    #             if tx.official_beneficiary_account_name
-    #             else None
-    #         ),
-    #         "customer_account_balance": float(tx.customer_account_balance),
-    #         "beneficiary_country": beneficiary_country,
-    #         "transaction_hour_of_day": int(transaction_timestamp.hour),
-    #         "transaction_day_of_week": int(transaction_timestamp.isoweekday()),
-    #     }
 
     # @staticmethod
     # def _require_non_blank(value: str, field_name: str) -> None:

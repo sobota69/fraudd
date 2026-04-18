@@ -25,6 +25,8 @@ class WorkflowRunner:
         self.risk_calculator = RiskCalculator()
 
     def run_process_list(self, df: pd.DataFrame) -> WorkflowResult:
+        self.provider.reset_database() # Graph reset in case of rerun
+
         risk_calculator = self.risk_calculator
 
         rules_runner = RulesRunner(rules=[RuleClass() for RuleClass in ALL_RULES])
@@ -47,6 +49,10 @@ class WorkflowRunner:
             customer_history[cid].sort(key=lambda t: t.transaction_timestamp)
 
         print(f"Built {len(transactions)} transactions + index in {_time.perf_counter() - t0:.2f}s")
+
+        self.provider.save_transactions(transactions) # Batch save all transactions to graph
+
+        print(f"Saved transactions to graph in {_time.perf_counter() - total_start:.2f}s, now running rules...")
 
         for i, tx in enumerate(transactions):
             history = customer_history.get(tx.customer_id, [])
@@ -79,52 +85,3 @@ class WorkflowRunner:
             rule_results=all_rule_results,
             elapsed=elapsed,
         )
-        
-    def run_process_graph(self, df: pd.DataFrame) -> WorkflowResult:
-        import time as _time
-
-        graph_provider = Neo4jGraphProvider() # Graph provider setup
-        graph_provider.reset_database() # Graph reset in case of rerun
-
-        risk_calculator = self.risk_calculator 
-        rules_runner = RulesRunner(rules=[RuleClass() for RuleClass in ALL_RULES])
-
-        total_start = _time.perf_counter()
-
-        for record in df.to_dict(orient="records"):
-            tx = Transaction(**record)
-            graph_provider.save_transaction(tx)
-            rule_results = rules_runner.run_detection(tx) # , history=history
-            assessment = risk_calculator.calculate_risk(rule_results, tx)
-            graph_provider.update_risk_assesment(tx, assessment)
-            
-
-        elapsed = _time.perf_counter() - total_start
-
-        # Save all results to CSV at once
-        output_file = "risk_assessments.csv"
-        rows = [
-            {
-                "transaction_id": a.transaction_id,
-                "triggered_rules": a.triggered_rules,
-                "is_fraud_transaction": a.is_fraud_transaction,
-                "risk_score": a.risk_score,
-                "risk_category": a.risk_category,
-            }
-            for a in risk_assessments
-        ]
-
-        pd.DataFrame(rows).to_csv(output_file, index=False)
-        print(f"\n✅ All {len(df)} transactions processed in {elapsed:.2f}s")
-
-        return WorkflowResult(
-            transactions=transactions,
-            assessments=risk_assessments,
-            rule_results=all_rule_results,
-            elapsed=elapsed,
-        )
-        
-        
-
-   
-
