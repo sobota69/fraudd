@@ -10,10 +10,13 @@ from application.ports import ResultExporter
 from domain.risk import RiskAssessment
 
 
+DEFAULT_RISK_ASSESSMENTS_FILENAME = "MegaFraudDetector9000Plus_risk_assessments.csv"
+
+
 class CsvResultExporter(ResultExporter):
     """Export risk assessments to CSV bytes, optionally saving a local copy."""
 
-    def __init__(self, output_path: str | None = "MegaFraudDetector9000Plus_risk_assessments.csv"):
+    def __init__(self, output_path: str | None = DEFAULT_RISK_ASSESSMENTS_FILENAME):
         self._output_path = output_path
 
     def export(self, assessments: Sequence[RiskAssessment]) -> bytes:
