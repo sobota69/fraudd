@@ -8,9 +8,9 @@ import pytest
 import math
 from datetime import datetime, timedelta, timezone
 
-from src.transaction.transaction import Transaction
-from src.rules.group.amount_stats_group import AmountStatsGroup
-from src.rules.base_rule import Severity
+from domain.transaction import Transaction
+from domain.rules.group.amount_stats_group import AmountStatsGroup
+from domain.rules.base_rule import Severity
 
 
 NOW = datetime(2025, 12, 19, 12, 0, 0, tzinfo=timezone.utc)
