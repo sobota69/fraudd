@@ -10,6 +10,7 @@ import pandas as pd
 from presentation.alert_dashboard import render_alert_dashboard
 from presentation.data_quality_dashboard import render_data_quality, render_data_exploration
 from presentation.graph_dashboard import render_graph_dashboard
+from presentation.rules_explanation_panel import render_rules_explanation_panel
 from infrastructure.graph.provider import Neo4jGraphProvider
 from infrastructure.csv_exporter import CsvResultExporter
 from application.workflow_runner import WorkflowRunner
@@ -21,6 +22,23 @@ st.title("🔍 Fraud Detection Dashboard")
 
 # ── Sidebar controls ────────────────────────────────────────────────────────
 st.sidebar.header("⚙️ Settings")
+view = st.sidebar.radio(
+    "Navigate",
+    options=["Dashboards", "Rules Explanation"],
+    index=0,
+)
+
+project_root = Path(__file__).resolve().parent.parent
+rules_candidates = [
+    project_root / "HACKATHON_FRAML_RULES.xlsx",
+    project_root / "test" / "4. HACKATHON_FRAML_RULES.xlsx",
+]
+rules_file = next((p for p in rules_candidates if p.exists()), rules_candidates[-1])
+
+if view == "Rules Explanation":
+    render_rules_explanation_panel(rules_file)
+    st.stop()
+
 uploaded_file = st.sidebar.file_uploader("Upload a transactions CSV", type=["csv"])
 
 # ── Data loading ─────────────────────────────────────────────────────────────
