@@ -6,8 +6,8 @@ The group computes the name-similarity score once and evaluates all three rules.
 import pytest
 from datetime import datetime, timezone
 
-from src.transaction.transaction import Transaction
-from src.rules.group.cop_group import CopGroup, compute_name_similarity
+from domain.transaction import Transaction
+from domain.rules.group.cop_group import CopGroup, compute_name_similarity
 
 
 NOW = datetime(2025, 12, 19, 12, 0, 0, tzinfo=timezone.utc)

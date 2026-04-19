@@ -3,9 +3,9 @@
 import pytest
 from datetime import datetime
 
-from src.risk.risk_calculator import RiskCalculator, RiskAssessment
-from src.rules.base_rule import RuleResult, Severity
-from src.transaction.transaction import Transaction
+from domain.risk import RiskCalculator, RiskAssessment
+from domain.rules.base_rule import RuleResult, Severity
+from domain.transaction import Transaction
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

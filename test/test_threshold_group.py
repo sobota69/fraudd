@@ -7,9 +7,9 @@ evaluates them in a single pass.
 import pytest
 from datetime import datetime, timezone
 
-from src.transaction.transaction import Transaction
-from src.rules.group.threshold_group import ThresholdGroup
-from src.rules.base_rule import Severity
+from domain.transaction import Transaction
+from domain.rules.group.threshold_group import ThresholdGroup
+from domain.rules.base_rule import Severity
 
 
 NOW = datetime(2025, 12, 19, 12, 0, 0, tzinfo=timezone.utc)

@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.graph.provider import Neo4jGraphProvider
-from src.graph.model import Transaction
+from infrastructure.graph.provider import Neo4jGraphProvider
+from domain.transaction import Transaction
 
 # ── Connection settings (override via env vars) ─────────────────────────────
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
