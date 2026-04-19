@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import pytest
 
 from infrastructure.graph.provider import Neo4jGraphProvider
+from infrastructure.graph.cypher_commands import CUSTOMER_SUBGRAPH
 from domain.transaction import Transaction
 
 # ── Connection settings (override via env vars) ─────────────────────────────
@@ -67,28 +68,33 @@ def sample_transaction() -> Transaction:
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 class TestSaveTransaction:
-    def test_save_and_retrieve_avg_amount(self, provider, sample_transaction):
-        provider.save_transaction(sample_transaction)
+    def test_save_and_retrieve_transaction(self, provider, sample_transaction):
+        provider.save_transactions([sample_transaction])
 
-        avg = provider.get_client_30d_avg_amount(customer_id=123)
-        assert avg is not None
-        assert avg == pytest.approx(150.25, rel=1e-2)
-
-    def test_previous_transaction_returns_saved(self, provider, sample_transaction):
-        provider.save_transaction(sample_transaction)
-
-        prev = provider.get_previous_transaction(
-            customer_id=123,
-            before=datetime.now(timezone.utc),
+        rows = provider._run_read_many(
+            CUSTOMER_SUBGRAPH, customer_id=123,
         )
-        assert prev is not None
-        assert prev.transaction_id == "tx-int-0001"
+        assert len(rows) >= 1
+        assert rows[0]["tx_id"] == "tx-int-0001"
+        assert rows[0]["amount"] == pytest.approx(150.25, rel=1e-2)
+
+    def test_transaction_count_in_time(self, provider, sample_transaction):
+        provider.save_transactions([sample_transaction])
+
+        count = provider.get_client_transactions_no_in_time(
+            customer_id=123,
+            timestamp=datetime.now(timezone.utc),
+            minutes=60,
+        )
+        assert count >= 1
 
 
 class TestResetDatabase:
     def test_reset_clears_data(self, provider, sample_transaction):
-        provider.save_transaction(sample_transaction)
+        provider.save_transactions([sample_transaction])
         provider.reset_database(include_optional_indexes=False)
 
-        avg = provider.get_client_30d_avg_amount(customer_id=123)
-        assert avg is None or avg == 0.0
+        rows = provider._run_read_many(
+            CUSTOMER_SUBGRAPH, customer_id=123,
+        )
+        assert len(rows) == 0

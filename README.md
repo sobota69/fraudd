@@ -10,15 +10,22 @@ Real-time fraud detection system with rule-based risk scoring, Neo4j graph analy
 ## 1. Set up Neo4j
 
 1. Download [Neo4j Community 2026.03.1](https://neo4j.com/deployment-center/) and extract it.
-2. Start the database:
+2. Start the database. Go to neo4j-community-2026.03.1\bin\neo4j directory and run:
    ```bash
    # Windows
-   neo4j-community-2026.03.1\bin\neo4j console
+   .\neo4j-admin.ps1 server console 
 
    # Linux / macOS
-   ./neo4j-community-2026.03.1/bin/neo4j console
+   ./bin/neo4j console
    ```
-3. Open the Neo4j Browser at <http://localhost:7474> and set the password to `capgemini` (or any password of your choice).
+3. Open the Neo4j Browser at <http://localhost:7474> and set the password to `capgemini` (or any password of your choice) or run command to set the password
+   ```bash
+   # Windows
+   .\neo4j-admin.ps1 dbms set-initial-password capgemini
+
+   # Linux / macOS
+   ./bin/neo4j-admin dbms set-initial-password capgemini
+   ```
 4. If you use a different password, URI, or database name, set environment variables before running the app:
    ```bash
    set NEO4J_URI=bolt://localhost:7687

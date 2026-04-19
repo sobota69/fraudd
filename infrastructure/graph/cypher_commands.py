@@ -272,6 +272,80 @@ RETURN t.channel AS channel,
 ORDER BY avg_risk DESC
 """
 
+SHARED_BENEFICIARY_CUSTOMERS = """
+MATCH (c1:Customer)-[:OWNS]->(:CustomerAccount)-[:TRANSFER]->(t1:Transaction)-[:TO]->(b:Beneficiary)<-[:TO]-(t2:Transaction)<-[:TRANSFER]-(:CustomerAccount)<-[:OWNS]-(c2:Customer)
+WHERE c1.customer_id < c2.customer_id
+WITH c1, c2, b,
+     count(DISTINCT t1) + count(DISTINCT t2) AS shared_tx_count,
+     sum(t1.amount) + sum(t2.amount) AS shared_volume,
+     max(CASE WHEN t1.risk_score > t2.risk_score THEN t1.risk_score ELSE t2.risk_score END) AS max_risk
+RETURN c1.customer_id AS customer_1,
+       c2.customer_id AS customer_2,
+       b.beneficiary_account AS shared_beneficiary,
+       b.beneficiary_country AS country,
+       shared_tx_count,
+       shared_volume,
+       max_risk
+ORDER BY shared_volume DESC
+LIMIT 100
+"""
+
+NETWORK_DEGREE_METRICS = """
+MATCH (c:Customer)-[:OWNS]->(:CustomerAccount)-[:TRANSFER]->(t:Transaction)-[:TO]->(b:Beneficiary)
+WITH c, collect(DISTINCT b.beneficiary_account) AS beneficiaries,
+     count(t) AS tx_count, sum(t.amount) AS total_sent,
+     avg(t.risk_score) AS avg_risk,
+     max(t.risk_score) AS max_risk
+RETURN c.customer_id AS customer_id,
+       size(beneficiaries) AS unique_beneficiaries,
+       tx_count,
+       total_sent,
+       avg_risk,
+       max_risk,
+       CASE WHEN tx_count > 0 THEN total_sent / tx_count ELSE 0 END AS avg_tx_size
+ORDER BY unique_beneficiaries DESC
+"""
+
+BENEFICIARY_INCOMING_ANALYSIS = """
+MATCH (c:Customer)-[:OWNS]->(:CustomerAccount)-[:TRANSFER]->(t:Transaction)-[:TO]->(b:Beneficiary)
+WITH b, collect(DISTINCT c.customer_id) AS senders,
+     count(t) AS tx_count, sum(t.amount) AS total_received,
+     avg(t.risk_score) AS avg_risk
+RETURN b.beneficiary_account AS beneficiary,
+       b.beneficiary_country AS country,
+       size(senders) AS unique_senders,
+       senders,
+       tx_count,
+       total_received,
+       avg_risk
+ORDER BY unique_senders DESC, total_received DESC
+LIMIT 50
+"""
+
+CURRENCY_BREAKDOWN = """
+MATCH (t:Transaction)
+WHERE t.currency IS NOT NULL
+RETURN t.currency AS currency,
+       count(t) AS tx_count,
+       sum(t.amount) AS total_volume,
+       avg(t.amount) AS avg_amount,
+       max(t.amount) AS max_amount,
+       sum(CASE WHEN t.is_fraud_transaction IN [true, 'True', 'true'] THEN 1 ELSE 0 END) AS fraud_count,
+       sum(CASE WHEN t.is_fraud_transaction IN [true, 'True', 'true'] THEN t.amount ELSE 0 END) AS fraud_volume,
+       avg(t.risk_score) AS avg_risk,
+       sum(CASE WHEN t.risk_category = 'HIGH' THEN 1 ELSE 0 END) AS high_risk_count,
+       sum(CASE WHEN t.risk_category = 'MEDIUM' THEN 1 ELSE 0 END) AS medium_risk_count
+ORDER BY tx_count DESC
+"""
+
+DOMINANT_CURRENCY = """
+MATCH (t:Transaction)
+WHERE t.currency IS NOT NULL
+RETURN t.currency AS currency, count(t) AS cnt
+ORDER BY cnt DESC
+LIMIT 1
+"""
+
 ALL_CUSTOMERS = """
 MATCH (c:Customer)
 RETURN c.customer_id AS customer_id
