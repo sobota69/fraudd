@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from bisect import bisect_left
+from collections import Counter, deque
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -127,29 +130,250 @@ def render_data_exploration(df: pd.DataFrame) -> None:
                 fig.update_layout(showlegend=False)
                 st.plotly_chart(fig, width='stretch')
 
-    if "entered_beneficiary_name" in df.columns and "official_beneficiary_account_name" in df.columns:
-        df["_name_mismatch"] = (
-            df["entered_beneficiary_name"].str.strip().str.lower()
-            != df["official_beneficiary_account_name"].str.strip().str.lower()
+    # ── Rule-violation snapshots aligned with implemented rules ─────────────
+    st.subheader("🧪 Rule Violations (Aligned to Rule Logic)")
+
+    def _country_from_iban(iban: str) -> str | None:
+        iban_str = str(iban).strip()
+        if len(iban_str) >= 2 and iban_str[:2].isalpha():
+            return iban_str[:2].upper()
+        return None
+
+    def _smallest_90pct_window(hour_counts: Counter[int]) -> tuple[int, int]:
+        total = sum(hour_counts.values())
+        if total <= 0:
+            return 0, 24
+        target = total * 0.90
+
+        best_start, best_size = 0, 24
+        for start in range(24):
+            covered = 0
+            for size in range(1, 25):
+                h = (start + size - 1) % 24
+                covered += hour_counts.get(h, 0)
+                if covered >= target:
+                    if size < best_size:
+                        best_start, best_size = start, size
+                    break
+        return best_start, best_size
+
+    # R1/R2/R3 CoP name similarity (computed exactly as in CopGroup)
+    if {"entered_beneficiary_name", "official_beneficiary_account_name"}.issubset(df.columns):
+        import unicodedata, re
+        from difflib import SequenceMatcher
+
+        _TITLES = frozenset({
+            "mr", "mrs", "ms", "dr", "prof", "sir", "jr", "sr",
+            "sa", "sp", "z", "o", "oo", "pan", "pani", "univ",
+        })
+
+        def _cop_normalise(name: str) -> str:
+            nfkd = unicodedata.normalize("NFKD", str(name))
+            ascii_only = "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+            return re.sub(r"[^a-z0-9\s]", "", ascii_only.lower()).strip()
+
+        def _cop_tokenise(text: str) -> list[str]:
+            return [t for t in text.split() if len(t) > 1 and t not in _TITLES]
+
+        def _cop_similarity(entered: str, official: str) -> float:
+            ta = _cop_tokenise(_cop_normalise(entered))
+            tb = _cop_tokenise(_cop_normalise(official))
+            if not ta and not tb:
+                return 1.0
+            if not ta or not tb:
+                return 0.0
+            total = sum(max(SequenceMatcher(None, t, b).ratio() for b in tb) for t in ta)
+            return total / max(len(ta), len(tb))
+
+        cop_df = df[[c for c in [
+            "transaction_id", "transaction_timestamp", "customer_id",
+            "entered_beneficiary_name", "official_beneficiary_account_name",
+            "amount", "currency", "is_new_beneficiary",
+        ] if c in df.columns]].copy()
+        cop_df["_similarity_pct"] = cop_df.apply(
+            lambda r: round(_cop_similarity(
+                r.get("entered_beneficiary_name", "") or "",
+                r.get("official_beneficiary_account_name", "") or "",
+            ) * 100, 2), axis=1
         )
-        mismatch_count = df["_name_mismatch"].sum()
-        st.subheader("🔀 Beneficiary Name Mismatch")
-        mc1, mc2 = st.columns(2)
-        mc1.metric("Mismatched names", f"{mismatch_count:,}")
-        mc2.metric("Mismatch rate", f"{mismatch_count / len(df):.2%}")
-        if mismatch_count > 0:
-            with st.expander("Show mismatched rows"):
-                st.dataframe(
-                    df[df["_name_mismatch"]][
-                        ["transaction_id", "entered_beneficiary_name",
-                         "official_beneficiary_account_name", "amount"]
-                    ].head(100) if "transaction_id" in df.columns else
-                    df[df["_name_mismatch"]][
-                        ["entered_beneficiary_name",
-                         "official_beneficiary_account_name", "amount"]
-                    ].head(100),
-                    width='stretch',
-                )
+
+        r1_df = cop_df[cop_df["_similarity_pct"] < 80]
+        r2_df = cop_df[(cop_df["_similarity_pct"] >= 80) & (cop_df["_similarity_pct"] < 90)]
+        if "is_new_beneficiary" in cop_df.columns:
+            is_new_bool = cop_df["is_new_beneficiary"].astype(str).str.lower().isin(["true", "1", "yes"])
+            r3_df = cop_df[is_new_bool & (cop_df["_similarity_pct"] < 90)]
+        else:
+            r3_df = pd.DataFrame()
+
+        cop_display_cols = [c for c in [
+            "transaction_id", "transaction_timestamp", "customer_id",
+            "entered_beneficiary_name", "official_beneficiary_account_name",
+            "_similarity_pct", "amount", "currency",
+        ] if c in cop_df.columns]
+
+        if len(r1_df):
+            with st.expander(f"R1 CoP Name Mismatch – Hard Fail (similarity < 80%) ({len(r1_df):,})"):
+                st.dataframe(r1_df[cop_display_cols].head(200), width='stretch')
+        if len(r2_df):
+            with st.expander(f"R2 CoP Name Mismatch – Soft Warning (80% ≤ similarity < 90%) ({len(r2_df):,})"):
+                st.dataframe(r2_df[cop_display_cols].head(200), width='stretch')
+        if len(r3_df):
+            r3_cols = [c for c in cop_display_cols + ["is_new_beneficiary"] if c in cop_df.columns]
+            with st.expander(f"R3 New Beneficiary + CoP Mismatch (new ben & similarity < 90%) ({len(r3_df):,})"):
+                st.dataframe(r3_df[r3_cols].head(200), width='stretch')
+
+    # Need core columns to align with actual rule evaluation flow
+    has_core = {"customer_id", "amount"}.issubset(df.columns)
+    ts_source = "transaction_timestamp" if "transaction_timestamp" in df.columns else None
+    if not ts_source and "_parsed_ts" in df.columns:
+        ts_source = "_parsed_ts"
+
+    if has_core and ts_source:
+        ordered = df.copy()
+        ordered["_ts"] = pd.to_datetime(ordered[ts_source], errors="coerce")
+        ordered["_amount_num"] = pd.to_numeric(ordered["amount"], errors="coerce")
+        ordered = ordered.dropna(subset=["_ts", "_amount_num"]).sort_values(["customer_id", "_ts"]).copy()
+        ordered["_hour_for_rule"] = ordered["_ts"].dt.hour
+
+        # R10: dest country unseen in customer history AND amount > 15000
+        if "beneficiary_account" in ordered.columns:
+            ordered["_r10_cross_border"] = False
+            for _, g in ordered.groupby("customer_id", sort=False):
+                seen: set[str] = set()
+                for idx, row in g.iterrows():
+                    dest = _country_from_iban(row.get("beneficiary_account", ""))
+                    amt = float(row["_amount_num"])
+                    if dest and amt > 15000 and dest not in seen:
+                        ordered.at[idx, "_r10_cross_border"] = True
+                    if dest:
+                        seen.add(dest)
+
+            n_r10 = int(ordered["_r10_cross_border"].sum())
+            if n_r10 > 0:
+                with st.expander(f"R10 Cross-Border Anomaly (>15,000 and unseen destination country) ({n_r10:,})"):
+                    cols = [c for c in [
+                        "transaction_id", "transaction_timestamp", "customer_id", "beneficiary_account", "amount", "currency",
+                    ] if c in ordered.columns]
+                    st.dataframe(ordered[ordered["_r10_cross_border"]][cols].head(200), width='stretch')
+
+        # R13: unusual hour outside smallest 90% hour window; min 10 history txs
+        ordered["_r13_unusual_hour"] = False
+        ordered["_r13_history_count"] = 0
+        ordered["_r13_window_start"] = pd.NA
+        ordered["_r13_window_size"] = pd.NA
+        for _, g in ordered.groupby("customer_id", sort=False):
+            hour_counts: Counter[int] = Counter()
+            history_count = 0
+            for idx, row in g.iterrows():
+                cur_hour = int(row["_hour_for_rule"])
+                if history_count >= 10:
+                    start, size = _smallest_90pct_window(hour_counts)
+                    in_window = ((cur_hour - start) % 24) < size
+                    if not in_window:
+                        ordered.at[idx, "_r13_unusual_hour"] = True
+                    ordered.at[idx, "_r13_history_count"] = history_count
+                    ordered.at[idx, "_r13_window_start"] = start
+                    ordered.at[idx, "_r13_window_size"] = size
+
+                hour_counts[cur_hour] += 1
+                history_count += 1
+
+        n_r13 = int(ordered["_r13_unusual_hour"].sum())
+        if n_r13 > 0:
+            with st.expander(f"R13 Unusual Hour (outside customer's 90% activity window; history ≥10) ({n_r13:,})"):
+                cols = [c for c in [
+                    "transaction_id", "transaction_timestamp", "customer_id", "amount", "currency", "channel",
+                    "_r13_history_count", "_r13_window_start", "_r13_window_size",
+                ] if c in ordered.columns]
+                st.dataframe(ordered[ordered["_r13_unusual_hour"]][cols].head(200), width='stretch')
+
+        # R18: at least 3 round-amount txs (multiple of 10) within trailing 48h
+        ordered["_r18_round_amounts"] = False
+        ordered["_r18_round_count_48h"] = 0
+        for _, g in ordered.groupby("customer_id", sort=False):
+            dq: deque[pd.Timestamp] = deque()
+            for idx, row in g.iterrows():
+                ts = row["_ts"]
+                window_start = ts - pd.Timedelta(hours=48)
+                while dq and dq[0] < window_start:
+                    dq.popleft()
+
+                amt = float(row["_amount_num"])
+                current_is_round = amt > 0 and amt % 10 == 0
+                total = len(dq) + (1 if current_is_round else 0)
+                ordered.at[idx, "_r18_round_count_48h"] = total
+                if total >= 3:
+                    ordered.at[idx, "_r18_round_amounts"] = True
+
+                if current_is_round:
+                    dq.append(ts)
+
+        n_r18 = int(ordered["_r18_round_amounts"].sum())
+        if n_r18 > 0:
+            with st.expander(f"R18 Round Amounts Anomaly (≥3 multiples-of-10 in 48h) ({n_r18:,})"):
+                cols = [c for c in [
+                    "transaction_id", "transaction_timestamp", "customer_id", "amount", "currency", "_r18_round_count_48h",
+                ] if c in ordered.columns]
+                st.dataframe(ordered[ordered["_r18_round_amounts"]][cols].head(200), width='stretch')
+
+        # R21: rapid account emptying; drop ratio > 70% within 1h window
+        if {"customer_account", "customer_account_balance"}.issubset(ordered.columns):
+            ordered["_r21_rapid_emptying"] = False
+            ordered["_r21_drop_ratio"] = pd.NA
+            bal_num = pd.to_numeric(ordered["customer_account_balance"], errors="coerce")
+            ordered["_balance_num"] = bal_num
+
+            for _, g in ordered.groupby("customer_id", sort=False):
+                acc_hist: dict[str, list[tuple[pd.Timestamp, float]]] = {}
+
+                for idx, row in g.iterrows():
+                    ts = row["_ts"]
+                    acc = str(row.get("customer_account", ""))
+                    amount = float(row["_amount_num"])
+                    balance_after = row.get("_balance_num")
+
+                    if pd.isna(balance_after):
+                        continue
+                    balance_after = float(balance_after)
+
+                    window_start = ts - pd.Timedelta(hours=1)
+                    hist = acc_hist.get(acc, [])
+
+                    balance_before = None
+                    if hist:
+                        ts_list = [t for t, _ in hist]
+                        boundary = bisect_left(ts_list, window_start)
+                        if boundary - 1 >= 0:
+                            balance_before = hist[boundary - 1][1]
+
+                    if balance_before is None:
+                        balance_before = balance_after + amount
+
+                    if balance_before > 0:
+                        drop_ratio = (balance_before - balance_after) / balance_before
+                        ordered.at[idx, "_r21_drop_ratio"] = round(drop_ratio, 4)
+                        if drop_ratio > 0.70:
+                            ordered.at[idx, "_r21_rapid_emptying"] = True
+
+                    hist.append((ts, balance_after))
+                    acc_hist[acc] = hist
+
+            n_r21 = int(ordered["_r21_rapid_emptying"].fillna(False).sum())
+            if n_r21 > 0:
+                with st.expander(f"R21 Rapid Account Emptying (drop ratio >70% in 1h) ({n_r21:,})"):
+                    cols = [c for c in [
+                        "transaction_id", "transaction_timestamp", "customer_id", "customer_account",
+                        "customer_account_balance", "amount", "currency", "_r21_drop_ratio",
+                    ] if c in ordered.columns]
+                    st.dataframe(ordered[ordered["_r21_rapid_emptying"].fillna(False)][cols].head(200), width='stretch')
+
+        # Merge rule flags back to df by index for potential downstream use
+        for c in [
+            "_r10_cross_border", "_r13_unusual_hour", "_r13_history_count", "_r13_window_start", "_r13_window_size",
+            "_r18_round_amounts", "_r18_round_count_48h", "_r21_rapid_emptying", "_r21_drop_ratio",
+        ]:
+            if c in ordered.columns:
+                df.loc[ordered.index, c] = ordered[c]
 
     if "is_new_beneficiary" in df.columns:
         c1, c2 = st.columns(2)

@@ -199,7 +199,7 @@ def render_rules_explanation_panel(rules_file: Path) -> None:
 
     summary_cols = [c for c in ["rule_id", "rule_name", "rule_category", "severity", "weight"] if c in filtered.columns]
     if summary_cols:
-        st.dataframe(filtered[summary_cols], width='stretch', height=280)
+        st.dataframe(filtered.reset_index(drop=True)[summary_cols], width='stretch', height=280)
 
     st.markdown("---")
     st.subheader("Rule Details")
