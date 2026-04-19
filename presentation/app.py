@@ -45,7 +45,7 @@ if wf_result.risk_csv:
     st.sidebar.download_button(
         label="📥 Download Risk Assessments",
         data=wf_result.risk_csv,
-        file_name="risk_assessments.csv",
+        file_name="MegaFraudDetector9000Plus_risk_assessments.csv",
         mime="text/csv",
     )
 

@@ -13,7 +13,7 @@ from domain.risk import RiskAssessment
 class CsvResultExporter(ResultExporter):
     """Export risk assessments to CSV bytes, optionally saving a local copy."""
 
-    def __init__(self, output_path: str | None = "risk_assessments.csv"):
+    def __init__(self, output_path: str | None = "MegaFraudDetector9000Plus_risk_assessments.csv"):
         self._output_path = output_path
 
     def export(self, assessments: Sequence[RiskAssessment]) -> bytes:
