@@ -131,7 +131,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
 
     if len(rule_trigger_counts) > 5:
         with st.expander("All rule trigger counts"):
-            st.dataframe(rule_trigger_counts, use_container_width=True)
+            st.dataframe(rule_trigger_counts, width='stretch')
 
     st.markdown("---")
 
@@ -257,7 +257,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
         filtered_df[existing_cols]
         .style.map(_highlight_risk, subset=["risk_level"])
     )
-    st.dataframe(styled, use_container_width=True, height=500)
+    st.dataframe(styled, width='stretch', height=500)
 
     st.markdown("---")
 
@@ -279,7 +279,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
             color="risk_level",
             color_discrete_map=_RISK_COLOURS,
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     # 4b – Rule trigger frequency (bar)
     with v2:
@@ -298,7 +298,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
             title="Rule Trigger Frequency",
         )
         fig.update_layout(yaxis_title="Rule", xaxis_title="Triggers", showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     v3, v4 = st.columns(2)
 
@@ -312,7 +312,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
             color_discrete_sequence=["#AB63FA"],
         )
         fig.update_layout(xaxis_title="Risk Score", yaxis_title="Transactions")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     # 4d – Alert trend over time (line)
     with v4:
@@ -329,7 +329,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
                 color_discrete_sequence=["#EF553B"],
             )
             fig.update_layout(xaxis_title="Date", yaxis_title="# Alerts")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # ── 5. Fraud Analysis ────────────────────────────────────────────────────
     if "is_fraud" in filtered_df.columns:
@@ -358,7 +358,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
                     color_continuous_scale="Reds",
                 )
                 fig.update_layout(xaxis_title="Customer ID", yaxis_title="# Fraud Transactions")
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
 
             # Fraud transactions over time
             with v2:
@@ -375,7 +375,7 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
                         color_discrete_sequence=["#EF553B"],
                     )
                     fig.update_layout(xaxis_title="Date", yaxis_title="# Fraud Transactions")
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
 
             # Fraud clients table
             st.markdown("**Clients with Fraud Detected**")
@@ -409,4 +409,4 @@ def render_alert_dashboard(result: WorkflowResult) -> None:
                 "fraud_%": "Fraud %",
             })
             styled_fraud = per_client.style.bar(subset=["Fraud %"], color="#EF553B80").format({"Fraud %": "{:.1f}%"})
-            st.dataframe(styled_fraud, use_container_width=True)
+            st.dataframe(styled_fraud, width='stretch')

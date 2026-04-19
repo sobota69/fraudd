@@ -131,6 +131,17 @@ ORDER BY t.transaction_timestamp DESC
 """
 
 
+def _convert_neo4j_datetimes(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert neo4j.time.DateTime columns to pandas-compatible datetime."""
+    for col in df.columns:
+        if df[col].dtype == object:
+            sample = df[col].dropna()
+            if not sample.empty and hasattr(sample.iloc[0], "to_native"):
+                df[col] = df[col].apply(lambda v: v.to_native() if v is not None and hasattr(v, "to_native") else v)
+                df[col] = pd.to_datetime(df[col], utc=True, errors="coerce")
+    return df
+
+
 def _safe_query(provider: Neo4jGraphProvider, query: str, **params) -> list[dict[str, Any]]:
     """Run a read query, returning empty list on failure."""
     try:
@@ -352,7 +363,7 @@ def _render_graph_explorer(provider: Neo4jGraphProvider) -> None:
 
     # ── Transaction detail table below the graph ─────────────────────────────
     with st.expander(f"📋 All transactions for customer {selected_cid} ({len(rows)} rows)", expanded=False):
-        detail_df = pd.DataFrame(rows)
+        detail_df = _convert_neo4j_datetimes(pd.DataFrame(rows))
         display = [c for c in [
             "tx_id", "amount", "currency", "channel", "risk_score",
             "risk_category", "triggered_rules", "beneficiary", "ben_country", "ts",
@@ -394,7 +405,7 @@ def _render_graph_explorer(provider: Neo4jGraphProvider) -> None:
 
         st.dataframe(
             filtered[display].style.map(_colour_risk, subset=["risk_category"]),
-            use_container_width=True,
+            width='stretch',
             height=350,
         )
 
@@ -434,7 +445,7 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
                 color_continuous_scale="OrRd",
                 labels={"total_volume": "Total Volume (£)", "avg_risk_score": "Avg Risk Score"},
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with v2:
             top_risky = prof_df.nlargest(15, "avg_risk_score")
@@ -445,7 +456,7 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
                 title="Top 15 Riskiest Customers",
                 labels={"avg_risk_score": "Avg Risk Score"},
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         # Top 15 riskiest customers table
         st.markdown("**Top 15 Riskiest Customers**")
@@ -458,7 +469,7 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
         styled_table = table_df.style.format(fmt)
         for col in bar_cols:
             styled_table = styled_table.bar(subset=[col], color="#EF553B80")
-        st.dataframe(styled_table, use_container_width=True)
+        st.dataframe(styled_table, width='stretch')
 
     st.markdown("---")
 
@@ -543,7 +554,7 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
         height=500,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     st.markdown("---")
 
@@ -558,10 +569,10 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
             title="Beneficiaries by Country & Incoming Volume (colour = # unique senders)",
         )
         fig.update_layout(height=450)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         with st.expander("Hotspot details"):
-            st.dataframe(hs_df, use_container_width=True)
+            st.dataframe(hs_df, width='stretch')
 
     st.markdown("---")
 
@@ -604,7 +615,7 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
                 color_continuous_scale="Viridis",
             )
             fig.update_layout(height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with v2:
             fig = px.bar(
@@ -613,7 +624,7 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
                 title="Top 15 Destination Countries by Volume",
                 color_continuous_scale="Blues",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     st.markdown("---")
 
@@ -629,7 +640,7 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
                 color="high_risk_count", color_continuous_scale="OrRd",
                 title="Average Risk Score by Channel",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
         with v2:
             fig = px.scatter(
@@ -638,7 +649,7 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
                 color_discrete_sequence=["#636EFA"],
             )
             fig.update_traces(textposition="top center")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
     # ── 7. High-Risk Transaction Explorer ────────────────────────────────────
     if risk_data:
@@ -658,4 +669,4 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
         styled = risk_df[display_cols].style.map(
             _highlight_risk, subset=["risk_category"]
         )
-        st.dataframe(styled, use_container_width=True, height=400)
+        st.dataframe(styled, width='stretch', height=400)
