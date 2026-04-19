@@ -16,7 +16,8 @@ from application.workflow_runner import WorkflowRunner
 
 
 # ── Page config ──────────────────────────────────────────────────────────────
-st.set_page_config(page_title="Fraud Detection Dashboard", page_icon="🔍", layout="wide")
+st.set_page_config(page_title="MegaFraudDetector9000+", page_icon="👮", layout="wide")
+st.sidebar.image(str(Path(__file__).resolve().parent / "logo.png"))
 st.title("🔍 Fraud Detection Dashboard")
 
 # ── Sidebar controls ────────────────────────────────────────────────────────
