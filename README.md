@@ -9,16 +9,8 @@ Real-time fraud detection system with rule-based risk scoring, Neo4j graph analy
 
 ## 1. Set up Neo4j
 
-1. Download [Neo4j Community 2026.03.1](https://neo4j.com/deployment-center/) and extract it.
-2. Start the database. Go to neo4j-community-2026.03.1\bin\neo4j directory and run:
-   ```bash
-   # Windows
-   .\neo4j-admin.ps1 server console 
-
-   # Linux / macOS
-   ./bin/neo4j console
-   ```
-3. Open the Neo4j Browser at <http://localhost:7474> and set the password to `capgemini` (or any password of your choice) or run command to set the password
+1. Download [Neo4j Community 2026.03.1](https://neo4j.com/deployment-center/) and extract it. (Zip file is also on sharepoint)
+2.  Go to neo4j-community-2026.03.1\bin\neo4j directory and set the password to `capgemini` (or any password you choose)
    ```bash
    # Windows
    .\neo4j-admin.ps1 dbms set-initial-password capgemini
@@ -26,18 +18,22 @@ Real-time fraud detection system with rule-based risk scoring, Neo4j graph analy
    # Linux / macOS
    ./bin/neo4j-admin dbms set-initial-password capgemini
    ```
-4. If you use a different password, URI, or database name, set environment variables before running the app:
+3. Start the database. Go to neo4j-community-2026.03.1\bin\neo4j directory and run:
    ```bash
-   set NEO4J_URI=bolt://localhost:7687
-   set NEO4J_USER=neo4j
-   set NEO4J_PASSWORD=your_password
-   set NEO4J_DATABASE=neo4j
+   # Windows
+   .\neo4j-admin.ps1 server console 
+
+   # Linux / macOS
+   ./bin/neo4j console
    ```
+3. Open the Neo4j Browser at <http://localhost:7474> and login with password to `capgemini` (or any password of your choice) 
 
 ## 2. Set up Python environment
 
 ```bash
-uv venv
+python -m venv .venv
+.venv\Scripts\activate
+pip install uv
 uv sync
 ```
 
