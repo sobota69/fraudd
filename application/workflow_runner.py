@@ -77,7 +77,7 @@ class WorkflowRunner:
         # Run rules + risk calculation
         t2 = _time.perf_counter()
         for tx in transactions:
-            history = customer_history.get(tx.customer_id, [])
+            history = [t for t in customer_history.get(tx.customer_id, []) if t.transaction_timestamp < tx.transaction_timestamp]
             rule_results = rules_runner.run_detection(tx, history=history)
             all_rule_results.append(rule_results)
             assessment = self._risk_calculator.calculate_risk(rule_results, tx)
