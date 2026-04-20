@@ -387,56 +387,16 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
 
     net_df = pd.DataFrame(network_data)
 
-    if customer_profiles:
-        st.subheader("👤 Customer Risk Profiles (from Graph)")
-        prof_df = pd.DataFrame(customer_profiles)
-
-        v1, v2 = st.columns(2)
-        with v1:
-            fig = px.scatter(
-                prof_df, x="total_volume", y="avg_risk_score",
-                size="flagged_transactions", color="max_risk_score",
-                hover_data=["customer_id", "total_transactions"],
-                title="Customer Risk vs Transaction Volume",
-                color_continuous_scale="OrRd",
-                labels={"total_volume": f"Total Volume ({cur})", "avg_risk_score": "Avg Risk Score"},
-            )
-            st.plotly_chart(fig, width='stretch')
-
-        with v2:
-            top_risky = prof_df.nlargest(15, "avg_risk_score")
-            top_risky["customer_id"] = top_risky["customer_id"].astype(str)
-            fig = px.bar(
-                top_risky, x="customer_id", y="avg_risk_score",
-                color="flagged_transactions", color_continuous_scale="Reds",
-                title="Top 15 Riskiest Customers",
-                labels={"avg_risk_score": "Avg Risk Score"},
-            )
-            st.plotly_chart(fig, width='stretch')
-
-        st.markdown("**Top 15 Riskiest Customers**")
-        table_df = prof_df.nlargest(15, "avg_risk_score").reset_index(drop=True)
-        table_df.index = table_df.index + 1
-        renamed = {c: c.replace("_", " ").title() for c in table_df.columns}
-        table_df = table_df.rename(columns=renamed)
-        fmt = {k: v for k, v in {"Avg Risk Score": "{:.2f}", "Max Risk Score": "{:.2f}", "Total Volume": f"{cur}{{:,.0f}}"}.items() if k in table_df.columns}
-        bar_cols = [c for c in ["Avg Risk Score", "Max Risk Score"] if c in table_df.columns]
-        styled_table = table_df.style.format(fmt)
-        for col in bar_cols:
-            styled_table = styled_table.bar(subset=[col], color="#EF553B80")
-        st.dataframe(styled_table, width='stretch')
-
-    st.markdown("---")
-
-    _render_graph_explorer(provider)
-    st.markdown("---")
-
     st.subheader("📊 Graph Overview")
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Unique Customers", f"{net_df['customer_id'].nunique():,}")
     m2.metric("Unique Beneficiaries", f"{net_df['beneficiary'].nunique():,}")
     m3.metric("Transfer Links", f"{len(net_df):,}")
     m4.metric("Total Volume", f"{cur}{net_df['total_amount'].sum():,.0f}")
+
+    st.markdown("---")
+
+    _render_graph_explorer(provider)
 
     st.markdown("---")
 
@@ -651,6 +611,50 @@ def render_graph_dashboard(provider: Neo4jGraphProvider) -> None:
                 {k: v for k, v in fmt_cols.items() if k in display_shared.columns}
             )
             st.dataframe(styled_shared, width='stretch', height=350)
+
+
+    st.markdown("---")
+
+    # ── Customer Profiles ────────────────────────────────────
+    if customer_profiles:
+        st.subheader("👤 Customer Risk Profiles (from Graph)")
+        prof_df = pd.DataFrame(customer_profiles)
+
+        v1, v2 = st.columns(2)
+        with v1:
+            fig = px.scatter(
+                prof_df, x="total_volume", y="avg_risk_score",
+                size="flagged_transactions", color="max_risk_score",
+                hover_data=["customer_id", "total_transactions"],
+                title="Customer Risk vs Transaction Volume",
+                color_continuous_scale="OrRd",
+                labels={"total_volume": f"Total Volume ({cur})", "avg_risk_score": "Avg Risk Score"},
+            )
+            st.plotly_chart(fig, width='stretch')
+
+        with v2:
+            top_risky = prof_df.nlargest(15, "avg_risk_score")
+            top_risky["customer_id"] = top_risky["customer_id"].astype(str)
+            fig = px.bar(
+                top_risky, x="customer_id", y="avg_risk_score",
+                color="flagged_transactions", color_continuous_scale="Reds",
+                title="Top 15 Riskiest Customers",
+                labels={"avg_risk_score": "Avg Risk Score"},
+            )
+            st.plotly_chart(fig, width='stretch')
+
+        st.markdown("**Top 15 Riskiest Customers**")
+        table_df = prof_df.nlargest(15, "avg_risk_score").reset_index(drop=True)
+        table_df.index = table_df.index + 1
+        renamed = {c: c.replace("_", " ").title() for c in table_df.columns}
+        table_df = table_df.rename(columns=renamed)
+        fmt = {k: v for k, v in {"Avg Risk Score": "{:.2f}", "Max Risk Score": "{:.2f}", "Total Volume": f"{cur}{{:,.0f}}"}.items() if k in table_df.columns}
+        bar_cols = [c for c in ["Avg Risk Score", "Max Risk Score"] if c in table_df.columns]
+        styled_table = table_df.style.format(fmt)
+        for col in bar_cols:
+            styled_table = styled_table.bar(subset=[col], color="#EF553B80")
+        st.dataframe(styled_table, width='stretch')
+
 
     # ── Beneficiary Incoming Analysis ────────────────────────────────────
     ben_analysis = _cached_query(provider, BENEFICIARY_INCOMING_ANALYSIS)
