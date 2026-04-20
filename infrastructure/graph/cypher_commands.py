@@ -352,6 +352,20 @@ RETURN c.customer_id AS customer_id
 ORDER BY c.customer_id
 """
 
+CUSTOMER_TX_CATEGORIES = """
+MATCH (c:Customer)-[:OWNS]->(:CustomerAccount)-[:TRANSFER]->(t:Transaction)
+WITH c.customer_id AS customer_id,
+     COLLECT(DISTINCT
+       CASE
+         WHEN toLower(toString(t.is_fraud_transaction)) = 'true' THEN 'Fraud'
+         WHEN t.risk_score > 0 THEN 'Violation'
+         ELSE 'No risk'
+       END
+     ) AS categories
+RETURN customer_id, categories
+ORDER BY customer_id
+"""
+
 CUSTOMER_SUBGRAPH = """
 MATCH (c:Customer {customer_id: $customer_id})-[:OWNS]->(ca:CustomerAccount)-[:TRANSFER]->(t:Transaction)-[:TO]->(b:Beneficiary)
 RETURN c.customer_id        AS customer_id,

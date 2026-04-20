@@ -15,6 +15,7 @@ from infrastructure.graph.provider import Neo4jGraphProvider
 from infrastructure.graph.cypher_commands import (
     ALL_CUSTOMERS,
     BENEFICIARY_HOTSPOTS,
+    CUSTOMER_TX_CATEGORIES,
     BENEFICIARY_INCOMING_ANALYSIS,
     CHANNEL_RISK,
     CROSS_BORDER_FLOWS,
@@ -90,7 +91,7 @@ _NODE_COLOURS = {
     "Transaction": "#00B894",
     "Transaction_HIGH": "#EF553B",
     "Transaction_MEDIUM": "#FFA15A",
-    "Transaction_LOW": "#00B894",
+    "Transaction_LOW": "#00B828",
     "Beneficiary": "#E84393",
 }
 
@@ -108,9 +109,31 @@ def _render_graph_explorer(provider: Neo4jGraphProvider) -> None:
         st.info("No customers in the graph yet.")
         return
 
-    cust_ids = [r["customer_id"] for r in all_custs]
+    # Fetch per-customer transaction categories for filtering
+    cust_cat_rows = _safe_query(provider, CUSTOMER_TX_CATEGORIES)
+    cust_categories: dict[Any, list[str]] = {}
+    for r in cust_cat_rows:
+        cust_categories[r["customer_id"]] = r["categories"]
 
-    col1, col2, col3 = st.columns([2, 2, 2])
+    all_cust_ids = [r["customer_id"] for r in all_custs]
+
+    col0, col1, col2, col3 = st.columns([2, 2, 2, 2])
+    with col0:
+        cat_options = ["Fraud", "Violation", "No risk"]
+        selected_cats = st.multiselect(
+            "Transaction category", options=cat_options, default=cat_options,
+            key="graph_explorer_cat",
+        )
+    # Filter customer list to those having at least one matching category
+    if selected_cats:
+        cust_ids = [cid for cid in all_cust_ids if any(c in selected_cats for c in cust_categories.get(cid, []))]
+    else:
+        cust_ids = all_cust_ids
+
+    if not cust_ids:
+        st.warning("No customers match the selected categories.")
+        return
+
     with col1:
         selected_cid = st.selectbox("Select customer", cust_ids, key="graph_explorer_cid")
     with col2:
@@ -118,9 +141,22 @@ def _render_graph_explorer(provider: Neo4jGraphProvider) -> None:
     with col3:
         graph_height = st.slider("Graph height (px)", 400, 900, 620, step=20, key="graph_explorer_h")
 
-    rows = _safe_query(provider, CUSTOMER_SUBGRAPH, customer_id=selected_cid)
-    if not rows:
+    all_rows = _safe_query(provider, CUSTOMER_SUBGRAPH, customer_id=selected_cid)
+    if not all_rows:
         st.warning("No transactions found for this customer.")
+        return
+
+    # Filter transactions by selected categories
+    def _tx_category(r: dict) -> str:
+        if str(r.get("is_fraud", "")).lower() == "true":
+            return "Fraud"
+        if (r.get("risk_score") or 0) > 0:
+            return "Violation"
+        return "No risk"
+
+    rows = [r for r in all_rows if _tx_category(r) in selected_cats] if selected_cats else all_rows
+    if not rows:
+        st.warning("No transactions match the selected categories for this customer.")
         return
 
     nodes_map: dict[str, Node] = {}
@@ -155,13 +191,13 @@ def _render_graph_explorer(provider: Neo4jGraphProvider) -> None:
                 font={"color": "white", "size": 11},
             )
 
-        risk_cat = r.get("risk_category") or ""
-        tx_colour = _NODE_COLOURS.get(f"Transaction_{risk_cat}", _NODE_COLOURS["Transaction"])
         risk_score = r.get("risk_score") or 0
+        risk_cat = r.get("risk_category") or ""
+        tx_colour = _NODE_COLOURS["Transaction"] if risk_score == 0 else _NODE_COLOURS.get(f"Transaction_{risk_cat}", _NODE_COLOURS["Transaction"])
         amount = r.get("amount") or 0
         tx_size = 15 + min(float(amount) / 2000, 18)
         rules_txt = r.get("triggered_rules") or "none"
-        fraud_flag = "⚠️ FRAUD" if r.get("is_fraud") else ""
+        fraud_flag = "⚠️ FRAUD" if str(r.get("is_fraud", "")).lower() == "true" else ""
 
         cur_code = r.get('currency', '')
         cur_sym = _CURRENCY_SYMBOLS.get(cur_code, cur_code)

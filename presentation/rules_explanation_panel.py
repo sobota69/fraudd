@@ -145,6 +145,9 @@ def _load_rules(path_str: str) -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].fillna("").astype(str).str.strip()
 
+    if "severity" in df.columns:
+        df["severity"] = df["severity"].replace("", "MILD(1)")
+
     if "weight" in df.columns:
         df["weight"] = pd.to_numeric(df["weight"], errors="coerce")
 
